@@ -286,7 +286,7 @@ export default function CreatePlanManual({ onBack }) {
         </div>
 
         {/* Botão */}
-        <div className="pb-10 pt-6 shrink-0">
+        <div className="pb-24 pt-6 shrink-0">
           {error && <p className="text-sm text-destructive text-center mb-4">{error}</p>}
           {step < TOTAL_STEPS - 1 ? (
             <Button onClick={() => setStep(s => s + 1)} disabled={!canProceed()}
