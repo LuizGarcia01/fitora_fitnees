@@ -215,7 +215,7 @@ export default function CreatePlanAI({ onBack }) {
   if (generating) return <GeneratingScreen />;
 
   return (
-    <div className="h-[calc(100dvh-3.5rem)] bg-background flex flex-col overflow-hidden">
+    <div className="h-[calc(100dvh-3.5rem-4rem)] bg-background flex flex-col overflow-hidden">
       {/* Header */}
       <div className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-4 pt-5 pb-4 shrink-0">
         <div className="max-w-lg mx-auto flex items-center gap-4">
@@ -234,7 +234,7 @@ export default function CreatePlanAI({ onBack }) {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-6 flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-y-auto pr-0.5">
+        <div className="flex-1 overflow-hidden">
           <AnimatePresence mode="wait">
 
             {/* Step 0: Dados pessoais */}
