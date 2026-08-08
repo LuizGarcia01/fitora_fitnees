@@ -6,7 +6,7 @@ import { supabase } from "@/api/supabaseClient";
 const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
 const REDIRECT_URI = isNative
   ? 'com.fitora.app://spotify-callback'
-  : (import.meta.env.VITE_SPOTIFY_REDIRECT_URI || "http://127.0.0.1:5173/spotify-callback");
+  : (import.meta.env.VITE_SPOTIFY_REDIRECT_URI || `${window.location.origin}/spotify-callback`);
 
 async function getValidToken() {
   const accessToken = localStorage.getItem("spotify_access_token");
@@ -179,11 +179,14 @@ export default function SpotifyPlayer() {
       // Web: popup normal
       const popup = window.open(data.auth_url, "_blank", "width=500,height=700");
       const timer = setInterval(() => {
-        if (!popup || popup.closed) {
+        let isClosed = false;
+        try { isClosed = !popup || popup.closed; } catch { isClosed = true; }
+        if (isClosed) {
           clearInterval(timer);
           checkConnection().then((token) => { if (token) fetchPlayback(); });
         }
       }, 500);
+      setTimeout(() => clearInterval(timer), 5 * 60 * 1000);
     }
   };
 
