@@ -1,5 +1,6 @@
 ﻿import React, { useState } from "react";
 import { supabase } from "@/api/supabaseClient";
+import { useAuth } from "@/lib/AuthContext";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Plus, ChevronLeft, Scale, Ruler, TrendingUp, TrendingDown, Minus, Check, Loader2 } from "lucide-react";
@@ -62,6 +63,7 @@ const emptyForm = () =>
 export default function Measurements() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [activeChart, setActiveChart] = useState("weight_kg");
@@ -80,7 +82,6 @@ export default function Measurements() {
 
   const addMutation = useMutation({
     mutationFn: async (payload) => {
-      const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Não autenticado");
       const clean = Object.fromEntries(
         Object.entries(payload).filter(([, v]) => v !== "" && v !== null)

@@ -14,6 +14,7 @@ const GOALS = [
   { value: "condicionamento",label: "Condicionamento",emoji: "🏃" },
 ];
 const LEVELS = ["Iniciante","Intermediário","Avançado"];
+const LEVEL_VALUES = { "Iniciante": "iniciante", "Intermediário": "intermediario", "Avançado": "avancado" };
 
 const stepVariants = {
   enter: { opacity: 0, x: 40 },
@@ -106,7 +107,7 @@ export default function CreatePlanManual({ onBack }) {
       await supabase.from("workout_plans").insert({
         name: planName.trim(),
         goal,
-        level: level.toLowerCase(),
+        level: LEVEL_VALUES[level] || level.toLowerCase(),
         days_per_week: selectedDays.length,
         weekly_plan: weeklyPlan,
         is_active: true,
@@ -145,7 +146,7 @@ export default function CreatePlanManual({ onBack }) {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-6 flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
 
             {/* Step 0: Nome + objetivo + nível */}

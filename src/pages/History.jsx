@@ -27,7 +27,8 @@ export default function History() {
       const { data } = await supabase
         .from("exercise_logs")
         .select("exercise_name, date, sets_data")
-        .order("date", { ascending: false });
+        .order("date", { ascending: false })
+        .limit(200);
       return data || [];
     },
   });
@@ -54,7 +55,9 @@ export default function History() {
   })();
 
   const groupedLogs = logs.reduce((acc, log) => {
-    const monthKey = format(parseISO(log.date), "MMMM yyyy", { locale: ptBR });
+    const monthKey = log.date
+      ? format(parseISO(log.date), "MMMM yyyy", { locale: ptBR })
+      : "Sem data";
     if (!acc[monthKey]) acc[monthKey] = [];
     acc[monthKey].push(log);
     return acc;

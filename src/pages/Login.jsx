@@ -30,19 +30,26 @@ export default function Login() {
   };
 
   const handleGoogle = async () => {
-    const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
-    if (isNative) {
-      const { Browser } = await import('@capacitor/browser');
-      const { data } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { skipBrowserRedirect: true, redirectTo: 'com.fitora.app://login-callback' },
-      });
-      if (data?.url) await Browser.open({ url: data.url });
-    } else {
-      await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: window.location.origin + "/" },
-      });
+    setError("");
+    try {
+      const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
+      if (isNative) {
+        const { Browser } = await import('@capacitor/browser');
+        const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { skipBrowserRedirect: true, redirectTo: 'com.fitora.app://login-callback' },
+        });
+        if (oauthError) throw oauthError;
+        if (data?.url) await Browser.open({ url: data.url });
+      } else {
+        const { error: oauthError } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: window.location.origin + "/" },
+        });
+        if (oauthError) throw oauthError;
+      }
+    } catch (err) {
+      setError(err.message || "Erro ao entrar com Google. Tente novamente.");
     }
   };
 

@@ -8,10 +8,13 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/AuthContext";
 
 const goalLabels = {
-  massa_muscular: "Massa Muscular",
-  forca: "Força",
-  resistencia: "Resistência",
+  hipertrofia: "Hipertrofia",
   emagrecimento: "Emagrecimento",
+  forca: "Força",
+  condicionamento: "Condicionamento",
+  saude: "Saúde Geral",
+  massa_muscular: "Massa Muscular",
+  resistencia: "Resistência",
 };
 
 const statConfig = [

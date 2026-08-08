@@ -121,7 +121,7 @@ export default function AICoach({ onClose }) {
                 </div>
                 <div className="flex-1">
                   <p className="text-xs text-primary uppercase tracking-widest font-heading font-bold mb-1">
-                    VITA · {new Date(analysis.timestamp).toLocaleDateString("pt-BR")}
+                    VITA{analysis.timestamp && !isNaN(new Date(analysis.timestamp)) ? ` · ${new Date(analysis.timestamp).toLocaleDateString("pt-BR")}` : ""}
                   </p>
                   <p className="text-foreground font-body leading-relaxed whitespace-pre-line text-sm">
                     {analysis.analysis}

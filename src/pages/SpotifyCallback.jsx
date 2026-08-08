@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/api/supabaseClient";
 
-const REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI || "http://127.0.0.1:5173/spotify-callback";
+const REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI || `${window.location.origin}/spotify-callback`;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
@@ -108,8 +108,18 @@ export default function SpotifyCallback() {
         )}
 
         {!ok && (
-          <button onClick={() => window.close()} className="text-xs text-primary underline">
-            Fechar esta janela
+          <div className="flex flex-col items-center gap-2">
+            <button onClick={() => window.close()} className="text-xs text-primary underline">
+              Fechar esta janela
+            </button>
+            <button onClick={() => { try { window.close(); } catch {} window.history.back(); }} className="text-xs text-muted-foreground underline">
+              Voltar ao app
+            </button>
+          </div>
+        )}
+        {ok && (
+          <button onClick={() => { try { window.close(); } catch {} window.history.back(); }} className="text-xs text-muted-foreground underline">
+            Voltar ao app
           </button>
         )}
       </div>

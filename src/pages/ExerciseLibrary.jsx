@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, Dumbbell, Zap, Target, X } from "lucide-react";
 import ExerciseDetailModal from "@/components/fitness/ExerciseDetailModal";
-import ExerciseGif from "@/components/fitness/ExerciseGif";
 
 const categories = [
   { value: "all", label: "Todos" },

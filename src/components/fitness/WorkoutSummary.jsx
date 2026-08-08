@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, Flame, Dumbbell, Clock, X, Star } from "lucide-react";
 
@@ -43,7 +43,7 @@ export default function WorkoutSummary({ summary, onClose }) {
       delay: i * 0.04,
     }))
   );
-  const motivation = MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)];
+  const motivation = useMemo(() => MOTIVATIONS[Math.floor(Math.random() * MOTIVATIONS.length)], []);
   const completionRate = totalExercises > 0 ? Math.round((completedCount / totalExercises) * 100) : 0;
 
   return (

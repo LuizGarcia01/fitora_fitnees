@@ -198,7 +198,7 @@ export default function CreatePlanAI({ onBack }) {
         weekly_plan: planData.weekly_plan,
         is_active: true,
       });
-      await syncExercisesToLibrary(planData.weekly_plan);
+      try { await syncExercisesToLibrary(planData.weekly_plan); } catch {}
       navigate("/plano");
     } catch (err) {
       setError("Erro ao gerar plano: " + (err?.message || "Tente novamente."));
@@ -234,7 +234,7 @@ export default function CreatePlanAI({ onBack }) {
       </div>
 
       <div className="max-w-lg mx-auto px-4 pt-6 flex-1 flex flex-col overflow-hidden">
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
           <AnimatePresence mode="wait">
 
             {/* Step 0: Dados pessoais */}

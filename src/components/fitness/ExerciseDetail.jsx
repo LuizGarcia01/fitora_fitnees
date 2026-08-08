@@ -19,6 +19,8 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
   const [newPR, setNewPR] = useState(null);
   const [showSubstitution, setShowSubstitution] = useState(false);
   const intervalRef = useRef(null);
+  const prTimeoutRef = useRef(null);
+  const [saveError, setSaveError] = useState(false);
   const [setInputs, setSetInputs] = useState(
     Array.from({ length: totalSets }, () => ({ weight_kg: "", reps_done: "" }))
   );
@@ -35,7 +37,10 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
         setAllLogs(logs);
         if (logs[0]) setLastLog(logs[0]);
       });
-    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (prTimeoutRef.current) clearTimeout(prTimeoutRef.current);
+    };
   }, [exercise.name]);
 
   // Pré-popula inputs com valores da última sessão ao carregar histórico
@@ -103,7 +108,7 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
         reps_done: parseInt(inp.reps_done) || 0,
       }));
 
-      const { data: newLog } = await supabase
+      const { data: newLog, error: logError } = await supabase
         .from("exercise_logs")
         .insert({
           exercise_name: exercise.name,
@@ -111,8 +116,9 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
           sets_data: setsData,
         })
         .select()
-        .single()
-        .catch(() => ({ data: null }));
+        .single();
+
+      if (logError) setSaveError(true);
 
       if (newLog) {
         const maxWeight = Math.max(...setsData.map(s => s.weight_kg));
@@ -120,7 +126,7 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
           const prReps = setsData.find(s => s.weight_kg === maxWeight)?.reps_done || 0;
           setNewPR({ weight: maxWeight, reps: prReps });
           setShowPR(true);
-          setTimeout(() => { setShowPR(false); setNewPR(null); }, 4000);
+          prTimeoutRef.current = setTimeout(() => { setShowPR(false); setNewPR(null); }, 4000);
         }
       }
 
@@ -386,6 +392,11 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
         </div>
       </div>
 
+      {saveError && (
+        <p className="mx-5 mb-2 text-xs text-destructive text-center">
+          Erro ao salvar exercício. Verifique sua conexão.
+        </p>
+      )}
       <div className="px-5 pb-24 pt-4">
         <AnimatePresence mode="wait">
           {resting ? (
@@ -428,6 +439,11 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
             onSubstitute={(newName) => {
               if (onSubstitute) onSubstitute(newName);
               setShowSubstitution(false);
+              setCurrentSet(1);
+              setCompletedSets(new Set());
+              setResting(false);
+              if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
+              setSetInputs(Array.from({ length: exercise.sets || 4 }, () => ({ weight_kg: "", reps_done: "" })));
             }}
             onClose={() => setShowSubstitution(false)}
           />

@@ -19,10 +19,13 @@ import { Link } from "react-router-dom";
 import { useAuth } from "@/lib/AuthContext";
 
 const goalLabels = {
-  massa_muscular: "Massa Muscular",
+  hipertrofia: "Hipertrofia",
+  emagrecimento: "Emagrecimento",
   forca: "Força",
+  condicionamento: "Condicionamento",
+  saude: "Saúde Geral",
+  massa_muscular: "Massa Muscular",
   resistencia: "Resistência",
-  emagrecimento: "Emagrecimento"
 };
 
 const levelLabels = {
@@ -62,7 +65,7 @@ export default function Profile() {
 
   const handleDeletePlan = async () => {
     if (activePlan) {
-      await supabase.from("workout_plans").update({ is_active: false }).eq("id", activePlan.id);
+      await supabase.from("workout_plans").delete().eq("id", activePlan.id);
       queryClient.invalidateQueries({ queryKey: ["workout-plans"] });
     }
   };
@@ -98,9 +101,9 @@ export default function Profile() {
   const handleSaveName = async () => {
     if (!nameInput.trim()) return;
     setSavingName(true);
-    await supabase.auth.updateUser({ data: { full_name: nameInput.trim() } });
+    const { error } = await supabase.auth.updateUser({ data: { full_name: nameInput.trim() } });
     setSavingName(false);
-    setEditingName(false);
+    if (!error) setEditingName(false);
   };
 
   const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || "";

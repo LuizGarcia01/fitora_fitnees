@@ -58,12 +58,15 @@ export default function Register() {
 
   const handleResend = async () => {
     setError("");
+    setLoading(true);
     try {
       const { error: authError } = await supabase.auth.resend({ email, type: "signup" });
       if (authError) throw authError;
       toast({ title: "Código enviado", description: "Verifique seu email para o novo código." });
     } catch (err) {
       setError(err.message || "Falha ao reenviar código");
+    } finally {
+      setLoading(false);
     }
   };
 

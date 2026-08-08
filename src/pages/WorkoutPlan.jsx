@@ -1,4 +1,4 @@
-﻿import React, { useState } from "react";
+﻿import React, { useState, useRef } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -33,6 +33,7 @@ export default function WorkoutPlan() {
   const [substitutions, setSubstitutions] = useState({});
   const [workoutStartTime, setWorkoutStartTime] = useState(null);
   const [workoutSummary, setWorkoutSummary] = useState(null);
+  const pendingSummaryRef = useRef(null);
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ["workout-plans"],
@@ -111,7 +112,13 @@ export default function WorkoutPlan() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["workout-logs"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["workout-logs"] });
+      if (pendingSummaryRef.current) {
+        setWorkoutSummary(pendingSummaryRef.current);
+        pendingSummaryRef.current = null;
+      }
+    },
   });
 
   const activePlan = plans[0];
@@ -145,6 +152,15 @@ export default function WorkoutPlan() {
       ? Math.round((Date.now() - workoutStartTime) / 1000)
       : 0;
 
+    pendingSummaryRef.current = {
+      completedCount,
+      totalExercises,
+      dayName: selectedDay,
+      muscleGroup: currentDayPlan.muscle_group,
+      durationSeconds,
+      planName: activePlan.name,
+    };
+
     logMutation.mutate({
       plan_id: activePlan.id,
       day: selectedDay,
@@ -155,15 +171,6 @@ export default function WorkoutPlan() {
         completed: completedExercises.has(effectiveName(ex.name)),
       })),
       notes: checkInData ? `Check-in: energia=${checkInData.energy}, sono=${checkInData.sleep}` : undefined,
-    });
-
-    setWorkoutSummary({
-      completedCount,
-      totalExercises,
-      dayName: selectedDay,
-      muscleGroup: currentDayPlan.muscle_group,
-      durationSeconds,
-      planName: activePlan.name,
     });
 
     setCompletedExercises(new Set());
@@ -242,6 +249,7 @@ export default function WorkoutPlan() {
                   setSelectedDay(day);
                   setCompletedExercises(new Set());
                   setWorkoutStarted(false);
+                  setWorkoutStartTime(null);
                   setSubstitutions({});
                 }}
               />
