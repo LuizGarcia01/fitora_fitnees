@@ -126,9 +126,9 @@ export default function CreatePlanManual({ onBack }) {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="h-[calc(100dvh-3.5rem)] bg-background flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="sticky top-14 z-20 bg-background/95 backdrop-blur-sm border-b border-border/40 px-4 pt-5 pb-4 shrink-0">
+      <div className="bg-background/95 backdrop-blur-sm border-b border-border/40 px-4 pt-5 pb-4 shrink-0">
         <div className="max-w-lg mx-auto flex items-center gap-4">
           <button onClick={handleBack} className="w-10 h-10 rounded-2xl bg-card border border-border/50 flex items-center justify-center hover:border-primary/30 transition-colors">
             <ArrowLeft className="w-5 h-5 text-foreground" />
@@ -144,8 +144,8 @@ export default function CreatePlanManual({ onBack }) {
         </div>
       </div>
 
-      <div className="max-w-lg mx-auto px-4 pt-6 flex-1 flex flex-col overflow-y-auto">
-        <div className="flex-1">
+      <div className="max-w-lg mx-auto px-4 pt-6 flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 overflow-y-auto pr-0.5">
           <AnimatePresence mode="wait">
 
             {/* Step 0: Nome + objetivo + nível */}
@@ -286,7 +286,7 @@ export default function CreatePlanManual({ onBack }) {
         </div>
 
         {/* Botão */}
-        <div className="pb-24 pt-6 shrink-0">
+        <div className="pt-4 pb-6 shrink-0">
           {error && <p className="text-sm text-destructive text-center mb-4">{error}</p>}
           {step < TOTAL_STEPS - 1 ? (
             <Button onClick={() => setStep(s => s + 1)} disabled={!canProceed()}
