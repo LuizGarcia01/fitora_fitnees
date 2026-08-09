@@ -31,15 +31,32 @@ async function getValidToken() {
   return data.access_token;
 }
 
-// Write to Spotify via Supabase edge function (server-side = no CORS issues for PUT/POST).
-// Forces JWT refresh first to avoid 401 when Supabase session is stale on mobile.
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// Write to Spotify via Supabase edge function (server-side = no CORS for PUT/POST).
+// Uses the anon key as Authorization so the Supabase gateway always accepts it —
+// the anon key is a valid JWT that never expires, eliminating all session-expiry issues.
+// The Spotify access_token in the body is the real authentication boundary.
 async function supabaseWrite(action, extra = {}) {
-  try { await supabase.auth.refreshSession(); } catch {}
   const token = await getValidToken();
   if (!token) return { data: null, error: new Error('no_spotify_token') };
-  return supabase.functions.invoke("spotifyPlayer", {
-    body: { action, access_token: token, ...extra },
-  });
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/spotifyPlayer`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'apikey': SUPABASE_ANON_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ action, access_token: token, ...extra }),
+    });
+    if (!res.ok) return { data: null, error: new Error(`HTTP ${res.status}`) };
+    const data = await res.json();
+    return { data, error: null };
+  } catch (err) {
+    return { data: null, error: err };
+  }
 }
 
 // Direct Spotify Web API call — used only for read operations (GET, no CORS preflight issues).
