@@ -212,9 +212,9 @@ export default function Layout() {
         )}
       </AnimatePresence>
 
-      {/* Botão flutuante VITA */}
+      {/* Botão flutuante VITA — oculto em /plano (já tem AICoach no header) */}
       <AnimatePresence>
-        {!showVita && (
+        {!showVita && location.pathname !== "/plano" && (
           <motion.button
             key="vita-fab"
             initial={{ opacity: 0, scale: 0.5 }}
