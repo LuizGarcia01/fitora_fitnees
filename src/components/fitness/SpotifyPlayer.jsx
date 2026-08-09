@@ -222,9 +222,10 @@ export default function SpotifyPlayer() {
   };
 
   const playWithoutDevice = async () => {
-    const { ok, status } = await spotifyFetch('/me/player/play', { method: 'PUT', body: {} });
+    const { ok, status, data: resData } = await spotifyFetch('/me/player/play', { method: 'PUT', body: {} });
     if (!ok) {
-      if (status === 404) {
+      const isPremiumError = (resData?.error?.message || '').toLowerCase().includes('premium required');
+      if (status === 404 || (status === 403 && !isPremiumError)) {
         setError('Nenhum dispositivo ativo. Abra o Spotify, toque uma música e tente novamente.');
       } else if (status === 403) {
         setError('Conta Spotify Premium necessária para controle remoto.');
@@ -301,7 +302,7 @@ export default function SpotifyPlayer() {
         return;
     }
 
-    const { ok, status } = await spotifyFetch(path, { method, body });
+    const { ok, status, data: resData } = await spotifyFetch(path, { method, body });
 
     if (!ok) {
       setLoading(false);
@@ -312,7 +313,14 @@ export default function SpotifyPlayer() {
         setConnected(false);
         setError('Sessão expirada. Reconecte o Spotify.');
       } else if (status === 403) {
-        setError('Conta Spotify Premium necessária para controle remoto.');
+        const msg = (resData?.error?.message || '').toLowerCase();
+        if (msg.includes('premium required')) {
+          setError('Conta Spotify Premium necessária para controle remoto.');
+        } else {
+          // 403 com outra mensagem = sem dispositivo ativo ou contexto inválido
+          await fetchDevices();
+          setError('no_device');
+        }
       } else if (status === 404) {
         await fetchDevices();
         setError('no_device');
