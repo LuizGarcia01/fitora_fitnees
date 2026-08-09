@@ -8,6 +8,8 @@ const REDIRECT_URI = isNative
   ? 'com.fitora.app://spotify-callback'
   : `${window.location.origin}/spotify-callback`;
 
+// Returns a valid Spotify access token, refreshing via edge function if expired.
+// Token refresh still needs Supabase (client secret is server-side).
 async function getValidToken() {
   const accessToken = localStorage.getItem("spotify_access_token");
   const refreshToken = localStorage.getItem("spotify_refresh_token");
@@ -17,15 +19,39 @@ async function getValidToken() {
 
   if (Date.now() < expiresAt - 60000) return accessToken;
 
+  // Token expired — ensure Supabase JWT is current before calling edge function
+  await supabase.auth.getSession();
   const { data } = await supabase.functions.invoke("spotifyAuth", {
     body: { action: "refresh_token", refresh_token: refreshToken },
   });
   if (!data?.access_token) return null;
 
-  const { access_token, expires_in } = data;
-  localStorage.setItem("spotify_access_token", access_token);
-  localStorage.setItem("spotify_expires_at", (Date.now() + expires_in * 1000).toString());
-  return access_token;
+  localStorage.setItem("spotify_access_token", data.access_token);
+  localStorage.setItem("spotify_expires_at", (Date.now() + data.expires_in * 1000).toString());
+  return data.access_token;
+}
+
+// Direct Spotify Web API call — no Supabase JWT required for playback control.
+async function spotifyFetch(path, { method = 'GET', body } = {}) {
+  const token = await getValidToken();
+  if (!token) return { ok: false, status: 401, data: null };
+
+  const opts = { method, headers: { Authorization: `Bearer ${token}` } };
+  if (body !== undefined) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  }
+
+  try {
+    const res = await fetch(`https://api.spotify.com/v1${path}`, opts);
+    let data = null;
+    if (res.status !== 204) {
+      try { data = await res.json(); } catch {}
+    }
+    return { ok: res.ok, status: res.status, data };
+  } catch {
+    return { ok: false, status: 0, data: null };
+  }
 }
 
 function formatMs(ms) {
@@ -70,26 +96,18 @@ export default function SpotifyPlayer() {
   const errorRef = useRef(null);
 
   const checkConnection = useCallback(async () => {
-    // Garante que a sessão Supabase está atualizada
-    await supabase.auth.getSession();
     const token = await getValidToken();
     setConnected(!!token);
     return token;
   }, []);
 
   const fetchPlayback = useCallback(async () => {
-    const token = await getValidToken();
-    if (!token) return;
-    const { data, error } = await supabase.functions.invoke("spotifyPlayer", {
-      body: { action: "get_playback_state", access_token: token },
-    });
-    if (error || !data) return; // sessão Supabase expirada — silencia até reconectar
-    const pb = data?.playback;
-    setPlayback(pb);
-    if (pb) {
-      setProgressMs(pb.progress_ms || 0);
-      setVolume(pb.device?.volume_percent ?? 50);
-    }
+    const { ok, status, data } = await spotifyFetch('/me/player');
+    if (status === 204) { setPlayback(null); return; } // nothing playing
+    if (!ok || !data) return;
+    setPlayback(data);
+    setProgressMs(data.progress_ms || 0);
+    setVolume(data.device?.volume_percent ?? 50);
   }, []);
 
   useEffect(() => {
@@ -104,12 +122,7 @@ export default function SpotifyPlayer() {
 
   useEffect(() => {
     checkConnection().then((token) => { if (token) fetchPlayback(); });
-    // Renova a sessão Supabase a cada ciclo para evitar 401
-    const interval = setInterval(async () => {
-      await supabase.auth.getSession();
-      fetchPlayback();
-    }, 8000);
-    // Ouve evento de conexão Spotify via deep link (APK)
+    const interval = setInterval(() => { fetchPlayback(); }, 8000);
     const onSpotifyConnected = () => {
       checkConnection().then(token => { if (token) fetchPlayback(); });
     };
@@ -120,7 +133,7 @@ export default function SpotifyPlayer() {
     };
   }, [checkConnection, fetchPlayback]);
 
-  // Ao voltar ao primeiro plano: atualiza playback E verifica dispositivos se havia erro
+  // Native: refresh on app resume
   useEffect(() => {
     if (!isNative) return;
     let cleanup = () => {};
@@ -130,23 +143,19 @@ export default function SpotifyPlayer() {
         const token = await getValidToken();
         if (!token) return;
         setTimeout(async () => {
-          // Sempre atualiza playback
           fetchPlayback();
-          // Se havia erro de dispositivo, verifica se agora há um disponível
-          const { data: devData } = await supabase.functions.invoke("spotifyPlayer", {
-            body: { action: "get_devices", access_token: token },
-          });
-          const devs = devData?.devices || [];
+          const { ok, data: devData } = await spotifyFetch('/me/player/devices');
+          const devs = ok ? (devData?.devices || []) : [];
           setDevices(devs);
           if (devs.length > 0) {
             setShowDevices(true);
             setError(null);
             setWaitingSpotify(false);
             clearInterval(spotifyPollRef.current);
-            // Auto-transfere se só há 1 dispositivo
             if (devs.length === 1) {
-              await supabase.functions.invoke("spotifyPlayer", {
-                body: { action: "transfer_playback", access_token: token, target_device_id: devs[0].id },
+              await spotifyFetch('/me/player', {
+                method: 'PUT',
+                body: { device_ids: [devs[0].id], play: false },
               });
               setShowDevices(false);
               setTimeout(fetchPlayback, 1500);
@@ -171,40 +180,37 @@ export default function SpotifyPlayer() {
     if (!data?.auth_url) return;
 
     if (isNative) {
-      // APK: abre no Chrome Custom Tab e retorna via deep link
       const { Browser } = await import('@capacitor/browser');
       await Browser.open({ url: data.auth_url });
-      // O retorno é tratado pelo DeepLinkHandler em App.jsx
     } else {
-      // Web: popup normal
-      const popup = window.open(data.auth_url, "_blank", "width=500,height=700");
-      const timer = setInterval(() => {
-        let isClosed = false;
-        try { isClosed = !popup || popup.closed; } catch { isClosed = true; }
-        if (isClosed) {
-          clearInterval(timer);
-          checkConnection().then((token) => { if (token) fetchPlayback(); });
+      window.open(data.auth_url, "_blank", "width=500,height=700");
+      // Poll localStorage for the token — more reliable than popup.closed (blocked by COOP on mobile)
+      const startMs = Date.now();
+      const pollTimer = setInterval(async () => {
+        if (Date.now() - startMs > 3 * 60 * 1000) { clearInterval(pollTimer); return; }
+        const token = localStorage.getItem("spotify_access_token");
+        const expiresAt = parseInt(localStorage.getItem("spotify_expires_at") || "0");
+        if (token && Date.now() < expiresAt) {
+          clearInterval(pollTimer);
+          setConnected(true);
+          fetchPlayback();
         }
-      }, 500);
-      setTimeout(() => clearInterval(timer), 5 * 60 * 1000);
+      }, 1000);
     }
   };
 
   const fetchDevices = async (retries = 3) => {
-    const token = await getValidToken();
-    if (!token) return;
-    const { data, error } = await supabase.functions.invoke("spotifyPlayer", {
-      body: { action: "get_devices", access_token: token },
-    });
-    if (error || !data) {
-      setConnected(false);
-      localStorage.removeItem("spotify_access_token");
-      localStorage.removeItem("spotify_refresh_token");
-      localStorage.removeItem("spotify_expires_at");
+    const { ok, status, data } = await spotifyFetch('/me/player/devices');
+    if (!ok) {
+      if (status === 401) {
+        setConnected(false);
+        localStorage.removeItem("spotify_access_token");
+        localStorage.removeItem("spotify_refresh_token");
+        localStorage.removeItem("spotify_expires_at");
+      }
       return;
     }
     const devs = data?.devices || [];
-    // Se vazio e ainda há tentativas, aguarda 2s e tenta de novo
     if (devs.length === 0 && retries > 0) {
       setShowDevices(true);
       setDevices([]);
@@ -216,76 +222,119 @@ export default function SpotifyPlayer() {
   };
 
   const playWithoutDevice = async () => {
-    const token = await getValidToken();
-    if (!token) return;
+    const { ok, status } = await spotifyFetch('/me/player/play', { method: 'PUT', body: {} });
+    if (!ok) {
+      if (status === 404) {
+        setError('Nenhum dispositivo ativo. Abra o Spotify, toque uma música e tente novamente.');
+      } else if (status === 403) {
+        setError('Conta Spotify Premium necessária para controle remoto.');
+      } else if (status === 401) {
+        localStorage.removeItem("spotify_access_token");
+        localStorage.removeItem("spotify_refresh_token");
+        localStorage.removeItem("spotify_expires_at");
+        setConnected(false);
+        setError('Sessão expirada. Reconecte o Spotify.');
+      } else {
+        setError('Erro ao iniciar reprodução. Verifique se o Spotify está aberto.');
+      }
+      return;
+    }
     setShowDevices(false);
-    await supabase.functions.invoke("spotifyPlayer", {
-      body: { action: "play", access_token: token },
-    });
     setTimeout(fetchPlayback, 1500);
   };
 
   const transferToDevice = async (deviceId) => {
-    const token = await getValidToken();
-    if (!token) return;
-    await supabase.functions.invoke("spotifyPlayer", {
-      body: { action: "transfer_playback", access_token: token, target_device_id: deviceId },
+    await spotifyFetch('/me/player', {
+      method: 'PUT',
+      body: { device_ids: [deviceId], play: false },
     });
     setShowDevices(false);
     setTimeout(fetchPlayback, 1500);
   };
 
   const fetchPlaylists = async () => {
-    const token = await getValidToken();
-    if (!token) return;
-    const { data } = await supabase.functions.invoke("spotifyPlayer", {
-      body: { action: "get_playlists", access_token: token },
-    });
-    setPlaylists(data?.playlists || []);
+    const { ok, data } = await spotifyFetch('/me/playlists?limit=50');
+    if (!ok) return;
+    setPlaylists(data?.items || []);
     setShowPlaylists(true);
   };
 
   const playerAction = async (action, extra = {}) => {
     setLoading(true);
     setError(null);
-    // Garante sessão Supabase atualizada antes de chamar a Edge Function
-    await supabase.auth.getSession();
-    const token = await getValidToken();
-    if (!token) { setLoading(false); return; }
-    const { data, error: invokeError } = await supabase.functions.invoke("spotifyPlayer", {
-      body: { action, access_token: token, ...extra },
-    });
-    if (invokeError || !data) {
-      setLoading(false);
-      setError('Sessão expirada. Reconecte o Spotify.');
-      return;
+
+    let path, method, body;
+    switch (action) {
+      case 'play':
+        path = '/me/player/play';
+        method = 'PUT';
+        body = extra.context_uri ? { context_uri: extra.context_uri }
+             : extra.position_ms !== undefined ? { position_ms: extra.position_ms }
+             : {};
+        break;
+      case 'pause':
+        path = '/me/player/pause';
+        method = 'PUT';
+        break;
+      case 'next':
+        path = '/me/player/next';
+        method = 'POST';
+        break;
+      case 'previous':
+        path = '/me/player/previous';
+        method = 'POST';
+        break;
+      case 'set_volume':
+        path = `/me/player/volume?volume_percent=${extra.volume_percent}`;
+        method = 'PUT';
+        break;
+      case 'set_shuffle':
+        path = `/me/player/shuffle?state=${extra.state}`;
+        method = 'PUT';
+        break;
+      case 'set_repeat':
+        path = `/me/player/repeat?state=${extra.state}`;
+        method = 'PUT';
+        break;
+      default:
+        setLoading(false);
+        return;
     }
-    if (data?.success === false) {
-      // Se falhou por falta de dispositivo ativo, mostra lista automática
-      if (['play', 'pause', 'next', 'previous'].includes(action)) {
-        const { data: devData } = await supabase.functions.invoke("spotifyPlayer", {
-          body: { action: "get_devices", access_token: token },
-        });
-        const devs = devData?.devices || [];
-        setDevices(devs);
-        setShowDevices(true);
+
+    const { ok, status } = await spotifyFetch(path, { method, body });
+
+    if (!ok) {
+      setLoading(false);
+      if (status === 401) {
+        localStorage.removeItem("spotify_access_token");
+        localStorage.removeItem("spotify_refresh_token");
+        localStorage.removeItem("spotify_expires_at");
+        setConnected(false);
+        setError('Sessão expirada. Reconecte o Spotify.');
+      } else if (status === 403) {
+        setError('Conta Spotify Premium necessária para controle remoto.');
+      } else if (status === 404) {
+        await fetchDevices();
         setError('no_device');
       } else {
-        setError(data.error || "Erro ao controlar playback");
+        setError('Erro ao controlar o Spotify. Verifique se está aberto.');
       }
+      return;
     }
+
     setTimeout(fetchPlayback, 800);
     setLoading(false);
   };
 
   const playPlaylist = async (contextUri) => {
-    await playerAction("play", { context_uri: contextUri });
+    await spotifyFetch('/me/player/play', { method: 'PUT', body: { context_uri: contextUri } });
     setShowPlaylists(false);
+    setTimeout(fetchPlayback, 1000);
   };
 
   const handleVolumeChange = async (val) => {
     setVolume(val);
-    await playerAction("set_volume", { volume_percent: val });
+    await spotifyFetch(`/me/player/volume?volume_percent=${val}`, { method: 'PUT' });
   };
 
   const toggleShuffle = () => playerAction("set_shuffle", { state: !playback?.shuffle_state });
@@ -439,27 +488,24 @@ export default function SpotifyPlayer() {
                             onClick={async () => {
                               window.open('spotify://', '_system');
                               setWaitingSpotify(true);
-                              // Após retornar do Spotify, tenta auto-detectar dispositivo
                               let attempts = 0;
                               clearInterval(spotifyPollRef.current);
                               spotifyPollRef.current = setInterval(async () => {
                                 attempts++;
                                 const token = await getValidToken();
                                 if (!token) { clearInterval(spotifyPollRef.current); setWaitingSpotify(false); return; }
-                                const { data } = await supabase.functions.invoke("spotifyPlayer", {
-                                  body: { action: "get_devices", access_token: token },
-                                });
-                                const devs = data?.devices || [];
+                                const { ok, data } = await spotifyFetch('/me/player/devices');
+                                const devs = ok ? (data?.devices || []) : [];
                                 if (devs.length > 0) {
                                   clearInterval(spotifyPollRef.current);
                                   setWaitingSpotify(false);
                                   setDevices(devs);
                                   setShowDevices(true);
                                   setError(null);
-                                  // Se só há 1 dispositivo, transfere automaticamente
                                   if (devs.length === 1) {
-                                    await supabase.functions.invoke("spotifyPlayer", {
-                                      body: { action: "transfer_playback", access_token: token, target_device_id: devs[0].id },
+                                    await spotifyFetch('/me/player', {
+                                      method: 'PUT',
+                                      body: { device_ids: [devs[0].id], play: false },
                                     });
                                     setTimeout(fetchPlayback, 1500);
                                     setShowDevices(false);
