@@ -6,7 +6,7 @@ import { supabase } from "@/api/supabaseClient";
 const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
 const REDIRECT_URI = isNative
   ? 'com.fitora.app://spotify-callback'
-  : (import.meta.env.VITE_SPOTIFY_REDIRECT_URI || `${window.location.origin}/spotify-callback`);
+  : `${window.location.origin}/spotify-callback`;
 
 async function getValidToken() {
   const accessToken = localStorage.getItem("spotify_access_token");

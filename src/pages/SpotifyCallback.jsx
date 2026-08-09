@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { supabase } from "@/api/supabaseClient";
 
-const REDIRECT_URI = import.meta.env.VITE_SPOTIFY_REDIRECT_URI || `${window.location.origin}/spotify-callback`;
+const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
+const REDIRECT_URI = isNative
+  ? 'com.fitora.app://spotify-callback'
+  : `${window.location.origin}/spotify-callback`;
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
