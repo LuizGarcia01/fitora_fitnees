@@ -4,6 +4,8 @@ import { Home, Dumbbell, BookOpen, CalendarDays, User, Menu, X, LogOut, ChevronR
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
 import OnboardingTutorial from "@/components/OnboardingTutorial";
+import AICoach from "@/components/fitness/AICoach";
+import { VitaRobot } from "@/components/VitaRobot";
 
 
 const bottomNavItems = [
@@ -18,6 +20,7 @@ export default function Layout() {
   const location = useLocation();
   const { user, logout } = useAuth();
   const [open, setOpen] = useState(false);
+  const [showVita, setShowVita] = useState(false);
   const [tutorialDone, setTutorialDone] = useState(
     () => !!localStorage.getItem('fitora_tutorial_done')
   );
@@ -206,6 +209,36 @@ export default function Layout() {
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* Botão flutuante VITA */}
+      <AnimatePresence>
+        {!showVita && (
+          <motion.button
+            key="vita-fab"
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.5 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={() => setShowVita(true)}
+            className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/40 flex items-center justify-center overflow-hidden border-2 border-primary/30"
+            style={{ backdropFilter: "blur(8px)" }}
+          >
+            <motion.div
+              animate={{ y: [0, -4, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+            >
+              <VitaRobot size={40} />
+            </motion.div>
+          </motion.button>
+        )}
+      </AnimatePresence>
+
+      {/* AICoach global (abre ao tocar na VITA) */}
+      <AnimatePresence>
+        {showVita && (
+          <AICoach onClose={() => setShowVita(false)} />
         )}
       </AnimatePresence>
 
