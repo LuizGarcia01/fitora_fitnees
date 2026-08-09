@@ -222,8 +222,7 @@ export default function Layout() {
             exit={{ opacity: 0, scale: 0.5 }}
             whileTap={{ scale: 0.9 }}
             onClick={() => setShowVita(true)}
-            className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-2xl bg-primary shadow-lg shadow-primary/40 flex items-center justify-center overflow-hidden border-2 border-primary/30"
-            style={{ backdropFilter: "blur(8px)" }}
+            className="fixed bottom-20 right-4 z-40 flex items-center justify-center"
           >
             <motion.div
               animate={{ y: [0, -4, 0] }}
