@@ -190,22 +190,39 @@ export default function SpotifyPlayer() {
     }
   };
 
-  const fetchDevices = async () => {
+  const fetchDevices = async (retries = 3) => {
     const token = await getValidToken();
     if (!token) return;
     const { data, error } = await supabase.functions.invoke("spotifyPlayer", {
       body: { action: "get_devices", access_token: token },
     });
     if (error || !data) {
-      // Sessão Supabase inválida — força reconexão Spotify
       setConnected(false);
       localStorage.removeItem("spotify_access_token");
       localStorage.removeItem("spotify_refresh_token");
       localStorage.removeItem("spotify_expires_at");
       return;
     }
-    setDevices(data?.devices || []);
+    const devs = data?.devices || [];
+    // Se vazio e ainda há tentativas, aguarda 2s e tenta de novo
+    if (devs.length === 0 && retries > 0) {
+      setShowDevices(true);
+      setDevices([]);
+      setTimeout(() => fetchDevices(retries - 1), 2000);
+      return;
+    }
+    setDevices(devs);
     setShowDevices(true);
+  };
+
+  const playWithoutDevice = async () => {
+    const token = await getValidToken();
+    if (!token) return;
+    setShowDevices(false);
+    await supabase.functions.invoke("spotifyPlayer", {
+      body: { action: "play", access_token: token },
+    });
+    setTimeout(fetchPlayback, 1500);
   };
 
   const transferToDevice = async (deviceId) => {
@@ -495,9 +512,17 @@ export default function SpotifyPlayer() {
                   {showDevices && (
                     <div className="mt-2 space-y-1 max-h-36 overflow-y-auto">
                       {devices.length === 0 ? (
-                        <div className="text-center py-2">
-                          <p className="text-xs text-muted-foreground mb-2">Nenhum dispositivo.<br/>Abra o Spotify, toque em uma música e volte aqui.</p>
-                          <button onClick={fetchDevices} className="text-xs font-semibold text-primary underline">Tentar novamente</button>
+                        <div className="text-center py-2 space-y-2">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <div className="w-3 h-3 rounded-full bg-primary/60 animate-pulse" />
+                            <p className="text-xs text-muted-foreground">Procurando dispositivos...</p>
+                          </div>
+                          <button onClick={playWithoutDevice} className="w-full text-xs font-semibold text-primary bg-primary/10 rounded-lg py-2 px-3">
+                            ▶ Tocar no dispositivo ativo
+                          </button>
+                          <button onClick={() => fetchDevices()} className="text-xs text-muted-foreground underline">
+                            Atualizar lista
+                          </button>
                         </div>
                       ) : devices.map((d) => (
                         <button key={d.id} onClick={() => transferToDevice(d.id)}
