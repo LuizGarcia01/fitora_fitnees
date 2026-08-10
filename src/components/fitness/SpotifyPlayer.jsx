@@ -193,6 +193,19 @@ export default function SpotifyPlayer() {
     return () => cleanup();
   }, [fetchPlayback]);
 
+  const disconnect = () => {
+    localStorage.removeItem("spotify_access_token");
+    localStorage.removeItem("spotify_refresh_token");
+    localStorage.removeItem("spotify_expires_at");
+    localStorage.removeItem("fitora_spotify_pending_token");
+    setConnected(false);
+    setPlayback(null);
+    setError(null);
+    setDevices([]);
+    setShowDevices(false);
+    setShowPlaylists(false);
+  };
+
   const handleConnect = async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
@@ -450,7 +463,7 @@ export default function SpotifyPlayer() {
                   {error && error !== 'no_device' && (
                     <div className="mb-2 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5">
                       <p className="text-xs font-bold text-red-700 mb-1">⚠️ {error}</p>
-                      <button onClick={() => { setConnected(false); setError(null); }} className="text-xs font-semibold text-red-600 underline">
+                      <button onClick={disconnect} className="text-xs font-semibold text-red-600 underline">
                         Reconectar Spotify
                       </button>
                     </div>
@@ -531,6 +544,13 @@ export default function SpotifyPlayer() {
                       className="flex-1 text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center justify-center gap-1 py-1.5 rounded-lg bg-secondary"
                     >
                       📱 Dispositivos
+                    </button>
+                    <button
+                      onClick={disconnect}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors py-1.5 px-2 rounded-lg bg-secondary"
+                      title="Desconectar Spotify"
+                    >
+                      ✕
                     </button>
                   </div>
 
