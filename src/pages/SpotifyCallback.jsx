@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from "react";
-import { supabase } from "@/api/supabaseClient";
 
 const isNative = window.Capacitor?.isNativePlatform?.() ?? false;
 const REDIRECT_URI = isNative
@@ -31,26 +30,14 @@ export default function SpotifyCallback() {
         return;
       }
 
-      // Tenta pegar o token da sessão do popup primeiro,
-      // senão usa o token salvo pelo app principal antes de abrir o popup
-      const { data: sessionData } = await supabase.auth.getSession();
-      const authToken = sessionData?.session?.access_token
-        || localStorage.getItem('fitora_spotify_pending_token');
-
-      if (!authToken) {
-        setStatus("Sessão não encontrada.");
-        setDetail("Feche esta janela, certifique-se de estar logado no app e tente novamente.");
-        return;
-      }
-
       try {
-        // Usa fetch direto para garantir o envio do token correto
+        // Use anon key — no Supabase session required here
         const res = await fetch(`${SUPABASE_URL}/functions/v1/spotifyAuth`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${authToken}`,
-            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
             'apikey': SUPABASE_ANON_KEY,
+            'Content-Type': 'application/json',
           },
           body: JSON.stringify({ action: 'exchange_code', code, redirect_uri: REDIRECT_URI }),
         });
@@ -58,11 +45,8 @@ export default function SpotifyCallback() {
         const data = await res.json();
 
         if (!res.ok || data.error) {
-          const hint = res.status === 401
-            ? "Sessão inválida — faça logout e login novamente no app."
-            : "Verifique as secrets SPOTIFY_CLIENT_ID e SPOTIFY_CLIENT_SECRET em Supabase → Settings → Edge Functions.";
           setStatus("Erro ao conectar ao Spotify.");
-          setDetail(`${data?.error || `HTTP ${res.status}`} — ${hint}`);
+          setDetail(data?.error || `HTTP ${res.status}`);
           return;
         }
 
@@ -77,7 +61,6 @@ export default function SpotifyCallback() {
         localStorage.setItem("spotify_access_token", access_token);
         localStorage.setItem("spotify_refresh_token", refresh_token);
         localStorage.setItem("spotify_expires_at", expiresAt.toString());
-        localStorage.removeItem('fitora_spotify_pending_token');
 
         setOk(true);
         setStatus("Spotify conectado com sucesso!");

@@ -8,22 +8,35 @@ const REDIRECT_URI = isNative
   ? 'com.fitora.app://spotify-callback'
   : `${window.location.origin}/spotify-callback`;
 
-// Returns a valid Spotify access token, refreshing via edge function if expired.
-// Token refresh still needs Supabase (client secret is server-side).
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+// All Supabase edge function calls use the anon key — it's a valid JWT that
+// never expires, so there's zero Supabase session dependency for Spotify ops.
+async function spotifyEdge(fnName, body) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/${fnName}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'apikey': SUPABASE_ANON_KEY,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 async function getValidToken() {
   const accessToken = localStorage.getItem("spotify_access_token");
   const refreshToken = localStorage.getItem("spotify_refresh_token");
   const expiresAt = parseInt(localStorage.getItem("spotify_expires_at") || "0");
 
   if (!accessToken || !refreshToken) return null;
-
   if (Date.now() < expiresAt - 60000) return accessToken;
 
-  // Token expired — ensure Supabase JWT is current before calling edge function
-  await supabase.auth.getSession();
-  const { data } = await supabase.functions.invoke("spotifyAuth", {
-    body: { action: "refresh_token", refresh_token: refreshToken },
-  });
+  // Token expired — refresh via edge function using anon key (no Supabase session needed)
+  const data = await spotifyEdge('spotifyAuth', { action: 'refresh_token', refresh_token: refreshToken });
   if (!data?.access_token) return null;
 
   localStorage.setItem("spotify_access_token", data.access_token);
@@ -31,32 +44,13 @@ async function getValidToken() {
   return data.access_token;
 }
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-// Write to Spotify via Supabase edge function (server-side = no CORS for PUT/POST).
-// Uses the anon key as Authorization so the Supabase gateway always accepts it —
-// the anon key is a valid JWT that never expires, eliminating all session-expiry issues.
-// The Spotify access_token in the body is the real authentication boundary.
+// All write ops go through spotifyPlayer edge function (server-side = no CORS for PUT/POST).
 async function supabaseWrite(action, extra = {}) {
   const token = await getValidToken();
   if (!token) return { data: null, error: new Error('no_spotify_token') };
-  try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/spotifyPlayer`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ action, access_token: token, ...extra }),
-    });
-    if (!res.ok) return { data: null, error: new Error(`HTTP ${res.status}`) };
-    const data = await res.json();
-    return { data, error: null };
-  } catch (err) {
-    return { data: null, error: err };
-  }
+  const data = await spotifyEdge('spotifyPlayer', { action, access_token: token, ...extra });
+  if (!data) return { data: null, error: new Error('edge_function_error') };
+  return { data, error: null };
 }
 
 // Direct Spotify Web API call — used only for read operations (GET, no CORS preflight issues).
@@ -207,14 +201,7 @@ export default function SpotifyPlayer() {
   };
 
   const handleConnect = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (session?.access_token) {
-      localStorage.setItem('fitora_spotify_pending_token', session.access_token);
-    }
-
-    const { data } = await supabase.functions.invoke("spotifyAuth", {
-      body: { action: "get_auth_url", redirect_uri: REDIRECT_URI },
-    });
+    const data = await spotifyEdge('spotifyAuth', { action: 'get_auth_url', redirect_uri: REDIRECT_URI });
     if (!data?.auth_url) return;
 
     if (isNative) {

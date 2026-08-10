@@ -1,5 +1,3 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -11,24 +9,14 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    );
-
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-      });
-    }
-
     const body = await req.json();
     const { action, code, redirect_uri, refresh_token } = body;
 
     const clientId = Deno.env.get('SPOTIFY_CLIENT_ID')!;
     const clientSecret = Deno.env.get('SPOTIFY_CLIENT_SECRET')!;
+
+    const json = (data: unknown, status = 200) =>
+      new Response(JSON.stringify(data), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     if (action === 'get_auth_url') {
       const scopes = [
@@ -46,13 +34,10 @@ Deno.serve(async (req) => {
         client_id: clientId,
         scope: scopes,
         redirect_uri,
-        state: user.id,
+        state: crypto.randomUUID(),
       });
 
-      return new Response(
-        JSON.stringify({ auth_url: `https://accounts.spotify.com/authorize?${params.toString()}` }),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      return json({ auth_url: `https://accounts.spotify.com/authorize?${params.toString()}` });
     }
 
     if (action === 'exchange_code') {
@@ -68,16 +53,14 @@ Deno.serve(async (req) => {
 
       const tokenData = await tokenRes.json();
       if (tokenData.error) {
-        return new Response(JSON.stringify({ error: tokenData.error_description }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return json({ error: tokenData.error_description }, 400);
       }
 
-      return new Response(JSON.stringify({
+      return json({
         access_token: tokenData.access_token,
         refresh_token: tokenData.refresh_token,
         expires_in: tokenData.expires_in,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      });
     }
 
     if (action === 'refresh_token') {
@@ -93,22 +76,18 @@ Deno.serve(async (req) => {
 
       const tokenData = await tokenRes.json();
       if (tokenData.error) {
-        return new Response(JSON.stringify({ error: tokenData.error_description }), {
-          status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-        });
+        return json({ error: tokenData.error_description }, 400);
       }
 
-      return new Response(JSON.stringify({
+      return json({
         access_token: tokenData.access_token,
         expires_in: tokenData.expires_in,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      });
     }
 
-    return new Response(JSON.stringify({ error: 'Invalid action' }), {
-      status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
-    });
+    return json({ error: 'Invalid action' }, 400);
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    return new Response(JSON.stringify({ error: (error as Error).message }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
   }
