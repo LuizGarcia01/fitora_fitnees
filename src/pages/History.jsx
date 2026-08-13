@@ -1,14 +1,200 @@
 import React, { useState } from "react";
 import { supabase } from "@/api/supabaseClient";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
-import { Calendar, CheckCircle2, Circle, Dumbbell, Trophy, ChevronDown, Clock, Zap } from "lucide-react";
+import { Calendar, CheckCircle2, Circle, Dumbbell, Trophy, ChevronDown, Clock, Zap, Pencil, Plus, Minus, X, Save } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
+// ── Modal para editar/adicionar dados de um exercício ──────────────────────
+function EditExerciseModal({ editing, onClose, onSaved }) {
+  const { exerciseName, date, logId, setsData } = editing;
+
+  const [sets, setSets] = useState(
+    setsData?.length > 0
+      ? setsData.map(s => ({ weight_kg: s.weight_kg ?? "", reps_done: s.reps_done ?? "" }))
+      : [{ weight_kg: "", reps_done: "" }]
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const updateSet = (i, field, value) => {
+    setSets(prev => {
+      const next = [...prev];
+      next[i] = { ...next[i], [field]: value };
+      // Preenche automaticamente os sets seguintes se é o primeiro
+      if (i === 0 && value !== "") {
+        for (let j = 1; j < next.length; j++) {
+          if (!next[j][field] && next[j][field] !== 0) next[j] = { ...next[j], [field]: value };
+        }
+      }
+      return next;
+    });
+  };
+
+  const adjust = (i, field, delta) => {
+    setSets(prev => {
+      const next = [...prev];
+      const cur = parseFloat(next[i][field]) || 0;
+      const step = field === "weight_kg" ? 2.5 : 1;
+      const val = Math.max(0, cur + delta * step);
+      next[i] = { ...next[i], [field]: val === 0 ? "" : val };
+      return next;
+    });
+  };
+
+  const addSet = () => setSets(prev => {
+    const last = prev[prev.length - 1] || {};
+    return [...prev, { weight_kg: last.weight_kg ?? "", reps_done: last.reps_done ?? "" }];
+  });
+
+  const removeSet = (i) => setSets(prev => prev.length > 1 ? prev.filter((_, j) => j !== i) : prev);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    const setsPayload = sets.map((s, i) => ({
+      set_number: i + 1,
+      weight_kg: parseFloat(s.weight_kg) || 0,
+      reps_done: parseInt(s.reps_done) || 0,
+    }));
+
+    let err;
+    if (logId) {
+      ({ error: err } = await supabase
+        .from("exercise_logs")
+        .update({ sets_data: setsPayload })
+        .eq("id", logId));
+    } else {
+      ({ error: err } = await supabase
+        .from("exercise_logs")
+        .insert({ exercise_name: exerciseName, date, sets_data: setsPayload }));
+    }
+
+    setSaving(false);
+    if (err) { setError("Erro ao salvar. Tente novamente."); return; }
+    onSaved();
+    onClose();
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm px-4 pb-6"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      <motion.div
+        initial={{ y: 60, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 60, opacity: 0 }}
+        transition={{ type: "spring", damping: 28, stiffness: 300 }}
+        className="w-full max-w-md bg-card border border-border rounded-3xl overflow-hidden shadow-2xl"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 border-b border-border/50">
+          <div>
+            <p className="text-xs text-primary uppercase tracking-wider font-semibold">Editar exercício</p>
+            <h3 className="text-base font-heading font-bold text-foreground leading-tight">{exerciseName}</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {format(parseISO(date), "dd 'de' MMMM yyyy", { locale: ptBR })}
+            </p>
+          </div>
+          <button onClick={onClose} className="w-9 h-9 rounded-xl bg-secondary flex items-center justify-center text-muted-foreground hover:text-foreground">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Sets */}
+        <div className="px-5 py-4 space-y-2 max-h-72 overflow-y-auto">
+          {sets.map((s, i) => (
+            <div key={i} className="flex items-center gap-2 bg-secondary/50 border border-border rounded-xl px-3 py-2">
+              <span className="text-xs font-heading font-semibold text-muted-foreground w-5 shrink-0">S{i + 1}</span>
+
+              {/* Peso */}
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground mb-0.5">Peso (kg)</p>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => adjust(i, "weight_kg", -1)} className="w-6 h-6 rounded-md bg-background flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <Minus className="w-2.5 h-2.5" />
+                  </button>
+                  <input
+                    type="number" min="0" step="2.5"
+                    placeholder="0"
+                    value={s.weight_kg}
+                    onChange={e => updateSet(i, "weight_kg", e.target.value)}
+                    className="w-0 flex-1 h-6 bg-background border border-border rounded-md text-center text-xs font-heading font-semibold text-foreground focus:outline-none focus:border-primary"
+                  />
+                  <button onClick={() => adjust(i, "weight_kg", 1)} className="w-6 h-6 rounded-md bg-background flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <Plus className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Reps */}
+              <div className="flex-1">
+                <p className="text-[10px] text-muted-foreground mb-0.5">Reps</p>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => adjust(i, "reps_done", -1)} className="w-6 h-6 rounded-md bg-background flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <Minus className="w-2.5 h-2.5" />
+                  </button>
+                  <input
+                    type="number" min="0"
+                    placeholder="0"
+                    value={s.reps_done}
+                    onChange={e => updateSet(i, "reps_done", e.target.value)}
+                    className="w-0 flex-1 h-6 bg-background border border-border rounded-md text-center text-xs font-heading font-semibold text-foreground focus:outline-none focus:border-primary"
+                  />
+                  <button onClick={() => adjust(i, "reps_done", 1)} className="w-6 h-6 rounded-md bg-background flex items-center justify-center text-muted-foreground hover:text-foreground">
+                    <Plus className="w-2.5 h-2.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Remover série */}
+              <button onClick={() => removeSet(i)} className="w-6 h-6 rounded-md flex items-center justify-center text-muted-foreground hover:text-destructive shrink-0">
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+
+          <button
+            onClick={addSet}
+            className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-dashed border-border text-xs text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Adicionar série
+          </button>
+        </div>
+
+        {error && <p className="text-xs text-destructive text-center px-5 pb-2">{error}</p>}
+
+        {/* Actions */}
+        <div className="flex gap-2 px-5 pb-5">
+          <button onClick={onClose} className="flex-1 h-11 rounded-xl bg-secondary text-foreground text-sm font-heading font-semibold">
+            Cancelar
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex-1 h-11 rounded-xl bg-primary text-primary-foreground text-sm font-heading font-semibold flex items-center justify-center gap-2 disabled:opacity-60"
+          >
+            <Save className="w-4 h-4" />
+            {saving ? "Salvando..." : "Salvar"}
+          </button>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+// ── Página principal de Histórico ──────────────────────────────────────────
 export default function History() {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState("treinos");
   const [expandedLogId, setExpandedLogId] = useState(null);
+  const [editingExercise, setEditingExercise] = useState(null);
 
   const { data: logs = [], isLoading: loadingLogs } = useQuery({
     queryKey: ["workout-logs"],
@@ -27,7 +213,7 @@ export default function History() {
     queryFn: async () => {
       const { data } = await supabase
         .from("exercise_logs")
-        .select("exercise_name, date, sets_data")
+        .select("id, exercise_name, date, sets_data")
         .order("date", { ascending: false })
         .limit(500);
       return data || [];
@@ -55,7 +241,6 @@ export default function History() {
     return Object.values(map).sort((a, b) => new Date(b.date) - new Date(a.date));
   })();
 
-  // Agrupa treinos por mês
   const groupedLogs = logs.reduce((acc, log) => {
     const monthKey = log.date
       ? format(parseISO(log.date), "MMMM yyyy", { locale: ptBR })
@@ -65,20 +250,27 @@ export default function History() {
     return acc;
   }, {});
 
-  // Busca sets de um exercício numa data específica
-  const getSetsForExercise = (exerciseName, date) =>
-    exerciseLogs.find(el => el.exercise_name === exerciseName && el.date === date)?.sets_data || null;
+  const getExerciseLog = (exerciseName, date) =>
+    exerciseLogs.find(el => el.exercise_name === exerciseName && el.date === date) || null;
 
-  // Volume total de um treino (kg × reps somados)
   const calcVolume = (completedExercises, date) => {
     let total = 0;
     for (const ex of completedExercises || []) {
-      const sets = getSetsForExercise(ex.exercise_name, date) || [];
-      for (const s of sets) {
+      const log = getExerciseLog(ex.exercise_name, date);
+      for (const s of log?.sets_data || []) {
         total += (s.weight_kg || 0) * (s.reps_done || 0);
       }
     }
     return total;
+  };
+
+  const openEdit = (exerciseName, date, exerciseLog) => {
+    setEditingExercise({
+      exerciseName,
+      date,
+      logId: exerciseLog?.id || null,
+      setsData: exerciseLog?.sets_data || null,
+    });
   };
 
   const isLoading = loadingLogs || loadingPRs;
@@ -169,7 +361,7 @@ export default function History() {
                             transition={{ delay: i * 0.04 }}
                             className="bg-card border border-border/50 rounded-2xl overflow-hidden hover:border-primary/20 transition-colors"
                           >
-                            {/* Cabeçalho do treino — clicável para expandir */}
+                            {/* Cabeçalho — clica para expandir */}
                             <button
                               onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
                               className="w-full flex items-center gap-3 px-3.5 py-3 text-left"
@@ -179,7 +371,6 @@ export default function History() {
                               }`}>
                                 <Dumbbell className={`w-5 h-5 ${isComplete ? "text-primary" : "text-muted-foreground"}`} />
                               </div>
-
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-heading font-semibold text-foreground">{log.day}</p>
                                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
@@ -188,19 +379,16 @@ export default function History() {
                                   </p>
                                   {log.duration_minutes > 0 && (
                                     <span className="flex items-center gap-0.5 text-xs text-muted-foreground">
-                                      <Clock className="w-3 h-3" />
-                                      {log.duration_minutes}min
+                                      <Clock className="w-3 h-3" />{log.duration_minutes}min
                                     </span>
                                   )}
                                   {volume > 0 && (
                                     <span className="flex items-center gap-0.5 text-xs text-primary">
-                                      <Zap className="w-3 h-3" />
-                                      {volume.toLocaleString('pt-BR')}kg vol.
+                                      <Zap className="w-3 h-3" />{volume.toLocaleString('pt-BR')}kg vol.
                                     </span>
                                   )}
                                 </div>
                               </div>
-
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {isComplete
                                   ? <CheckCircle2 className="w-4 h-4 text-primary" />
@@ -212,7 +400,7 @@ export default function History() {
                               </div>
                             </button>
 
-                            {/* Detalhe expandido — exercícios com pesos e séries */}
+                            {/* Detalhe expandido */}
                             <AnimatePresence initial={false}>
                               {isExpanded && (
                                 <motion.div
@@ -227,7 +415,8 @@ export default function History() {
                                       <p className="text-xs text-muted-foreground text-center py-2">Nenhum exercício registrado.</p>
                                     )}
                                     {log.completed_exercises?.map(ex => {
-                                      const setsData = getSetsForExercise(ex.exercise_name, log.date);
+                                      const exLog = getExerciseLog(ex.exercise_name, log.date);
+                                      const setsData = exLog?.sets_data;
                                       const exVolume = setsData
                                         ? setsData.reduce((sum, s) => sum + (s.weight_kg || 0) * (s.reps_done || 0), 0)
                                         : 0;
@@ -235,15 +424,23 @@ export default function History() {
                                       return (
                                         <div key={ex.exercise_name}>
                                           <div className="flex items-center justify-between mb-1.5">
-                                            <div className="flex items-center gap-1.5">
+                                            <div className="flex items-center gap-1.5 flex-1 min-w-0">
                                               {ex.completed
                                                 ? <CheckCircle2 className="w-3.5 h-3.5 text-primary shrink-0" />
                                                 : <Circle className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                                              <p className="text-xs font-heading font-semibold text-foreground">{ex.exercise_name}</p>
+                                              <p className="text-xs font-heading font-semibold text-foreground truncate">{ex.exercise_name}</p>
+                                              {exVolume > 0 && (
+                                                <span className="text-xs text-muted-foreground shrink-0">{exVolume}kg</span>
+                                              )}
                                             </div>
-                                            {exVolume > 0 && (
-                                              <span className="text-xs text-muted-foreground">{exVolume}kg vol.</span>
-                                            )}
+                                            {/* Botão editar */}
+                                            <button
+                                              onClick={() => openEdit(ex.exercise_name, log.date, exLog)}
+                                              className="ml-2 shrink-0 w-6 h-6 rounded-lg bg-secondary flex items-center justify-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                                              title="Editar cargas"
+                                            >
+                                              <Pencil className="w-3 h-3" />
+                                            </button>
                                           </div>
 
                                           {setsData?.length > 0 ? (
@@ -261,7 +458,15 @@ export default function History() {
                                               ))}
                                             </div>
                                           ) : ex.completed ? (
-                                            <p className="text-xs text-muted-foreground ml-5 italic">Concluído sem dados de carga</p>
+                                            <p className="text-xs text-muted-foreground ml-5 italic">
+                                              Sem dados de carga —{" "}
+                                              <button
+                                                onClick={() => openEdit(ex.exercise_name, log.date, null)}
+                                                className="text-primary underline"
+                                              >
+                                                adicionar agora
+                                              </button>
+                                            </p>
                                           ) : (
                                             <p className="text-xs text-muted-foreground ml-5 italic">Não realizado</p>
                                           )}
@@ -330,6 +535,17 @@ export default function History() {
 
         </AnimatePresence>
       </div>
+
+      {/* Modal de edição */}
+      <AnimatePresence>
+        {editingExercise && (
+          <EditExerciseModal
+            editing={editingExercise}
+            onClose={() => setEditingExercise(null)}
+            onSaved={() => queryClient.invalidateQueries({ queryKey: ["exercise-logs"] })}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }
