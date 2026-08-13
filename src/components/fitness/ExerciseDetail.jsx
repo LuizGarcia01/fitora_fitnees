@@ -7,10 +7,21 @@ import PRAlert from "./PRAlert";
 import ExerciseSubstitution from "./ExerciseSubstitution";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
+const PROGRESS_KEY = 'fitora_exercise_progress';
+const todayStr = new Date().toISOString().split('T')[0];
+
+function getSavedProgress(exerciseName) {
+  try {
+    const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+    return all[todayStr]?.[exerciseName] || null;
+  } catch { return null; }
+}
+
 export default function ExerciseDetail({ exercise, animationUrl, onClose, onComplete, onSubstitute }) {
   const totalSets = exercise.sets || 4;
-  const [currentSet, setCurrentSet] = useState(1);
-  const [completedSets, setCompletedSets] = useState(new Set());
+  const savedProgress = getSavedProgress(exercise.name);
+  const [currentSet, setCurrentSet] = useState(savedProgress?.currentSet || 1);
+  const [completedSets, setCompletedSets] = useState(new Set(savedProgress?.completedSets || []));
   const [resting, setResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
   const [lastLog, setLastLog] = useState(null);
@@ -22,7 +33,7 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
   const prTimeoutRef = useRef(null);
   const [saveError, setSaveError] = useState(false);
   const [setInputs, setSetInputs] = useState(
-    Array.from({ length: totalSets }, () => ({ weight_kg: "", reps_done: "" }))
+    savedProgress?.setInputs || Array.from({ length: totalSets }, () => ({ weight_kg: "", reps_done: "" }))
   );
 
   useEffect(() => {
@@ -43,7 +54,7 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
     };
   }, [exercise.name]);
 
-  // Pré-popula inputs com valores da última sessão ao carregar histórico
+  // Pré-popula inputs com valores da última sessão ao carregar histórico (só preenche campos vazios)
   useEffect(() => {
     if (!lastLog?.sets_data?.length) return;
     setSetInputs(prev =>
@@ -53,6 +64,21 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
       }))
     );
   }, [lastLog]);
+
+  // Persiste progresso em tempo real — restaurado automaticamente se o utilizador sair
+  useEffect(() => {
+    if (completedSets.size === totalSets) return; // já concluído, não persiste
+    try {
+      const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+      if (!all[todayStr]) all[todayStr] = {};
+      all[todayStr][exercise.name] = {
+        currentSet,
+        completedSets: Array.from(completedSets),
+        setInputs,
+      };
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+    } catch {}
+  }, [currentSet, completedSets, setInputs, exercise.name, totalSets]);
 
   const bestPR = allLogs.reduce((best, log) => {
     log.sets_data?.forEach((s) => {
@@ -129,6 +155,13 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
           prTimeoutRef.current = setTimeout(() => { setShowPR(false); setNewPR(null); }, 4000);
         }
       }
+
+      // Limpa o progresso salvo deste exercício — já foi concluído e salvo no Supabase
+      try {
+        const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+        if (all[todayStr]) delete all[todayStr][exercise.name];
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+      } catch {}
 
       setTimeout(() => { onComplete(); onClose(); }, 800);
       return;
@@ -444,6 +477,12 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
               setResting(false);
               if (intervalRef.current) { clearInterval(intervalRef.current); intervalRef.current = null; }
               setSetInputs(Array.from({ length: exercise.sets || 4 }, () => ({ weight_kg: "", reps_done: "" })));
+              // Limpa progresso do exercício original que foi substituído
+              try {
+                const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+                if (all[todayStr]) delete all[todayStr][exercise.name];
+                localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+              } catch {}
             }}
             onClose={() => setShowSubstitution(false)}
           />

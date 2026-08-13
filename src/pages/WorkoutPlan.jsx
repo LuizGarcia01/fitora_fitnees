@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef } from "react";
+﻿import React, { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -18,6 +18,8 @@ import WorkoutSummary from "@/components/fitness/WorkoutSummary";
 const allDays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
 const todayIndex = new Date().getDay();
 const todayName = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][todayIndex];
+const today = new Date().toISOString().split('T')[0];
+const SESSION_KEY = 'fitora_workout_session';
 
 export default function WorkoutPlan() {
   const queryClient = useQueryClient();
@@ -34,6 +36,38 @@ export default function WorkoutPlan() {
   const [workoutStartTime, setWorkoutStartTime] = useState(null);
   const [workoutSummary, setWorkoutSummary] = useState(null);
   const pendingSummaryRef = useRef(null);
+
+  // Restore active session from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
+      if (saved && saved.date === today) {
+        setSelectedDay(saved.day);
+        setWorkoutStarted(saved.workoutStarted || false);
+        setWorkoutStartTime(saved.workoutStartTime || null);
+        setCompletedExercises(new Set(saved.completedExercises || []));
+        setCheckInData(saved.checkInData || { energy: "normal", sleep: "ok", pain: false });
+        setSubstitutions(saved.substitutions || {});
+      }
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Persist active session to localStorage whenever it changes
+  useEffect(() => {
+    if (!workoutStarted) return;
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify({
+        date: today,
+        day: selectedDay,
+        workoutStarted,
+        workoutStartTime,
+        completedExercises: Array.from(completedExercises),
+        checkInData,
+        substitutions,
+      }));
+    } catch {}
+  }, [workoutStarted, workoutStartTime, completedExercises, checkInData, substitutions, selectedDay]);
 
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ["workout-plans"],
@@ -148,6 +182,7 @@ export default function WorkoutPlan() {
   const allCompleted = totalExercises > 0 && completedCount === totalExercises;
 
   const handleFinishWorkout = () => {
+    localStorage.removeItem(SESSION_KEY);
     const durationSeconds = workoutStartTime
       ? Math.round((Date.now() - workoutStartTime) / 1000)
       : 0;
@@ -251,6 +286,7 @@ export default function WorkoutPlan() {
                   setWorkoutStarted(false);
                   setWorkoutStartTime(null);
                   setSubstitutions({});
+                  localStorage.removeItem(SESSION_KEY);
                 }}
               />
             ))}
