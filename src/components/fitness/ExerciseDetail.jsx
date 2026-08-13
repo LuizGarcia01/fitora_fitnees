@@ -20,8 +20,15 @@ function getSavedProgress(exerciseName) {
 export default function ExerciseDetail({ exercise, animationUrl, onClose, onComplete, onSubstitute }) {
   const totalSets = exercise.sets || 4;
   const savedProgress = getSavedProgress(exercise.name);
-  const [currentSet, setCurrentSet] = useState(savedProgress?.currentSet || 1);
-  const [completedSets, setCompletedSets] = useState(new Set(savedProgress?.completedSets || []));
+  const restoredCompleted = new Set(savedProgress?.completedSets || []);
+  const savedCurrentSet = savedProgress?.currentSet || 1;
+  // If currentSet was saved while the rest timer was running (hadn't advanced yet),
+  // advance it past the already-completed set so the user sees the correct next set.
+  const restoredCurrentSet = restoredCompleted.has(savedCurrentSet)
+    ? Math.min(savedCurrentSet + 1, totalSets)
+    : savedCurrentSet;
+  const [currentSet, setCurrentSet] = useState(restoredCurrentSet);
+  const [completedSets, setCompletedSets] = useState(restoredCompleted);
   const [resting, setResting] = useState(false);
   const [restTimer, setRestTimer] = useState(0);
   const [lastLog, setLastLog] = useState(null);
@@ -156,11 +163,25 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
         }
       }
 
-      // Limpa o progresso salvo deste exercício — já foi concluído e salvo no Supabase
+      // Limpa o progresso parcial do exercício — foi concluído e salvo no Supabase
       try {
         const all = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
         if (all[todayStr]) delete all[todayStr][exercise.name];
         localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
+      } catch {}
+
+      // Marca o exercício como concluído na sessão do WorkoutPlan IMEDIATAMENTE —
+      // sem esperar os 800ms, para que o estado seja persistido mesmo que o app feche
+      // durante a animação de conclusão.
+      try {
+        const session = JSON.parse(localStorage.getItem('fitora_workout_session') || 'null');
+        if (session) {
+          const done = new Set(session.completedExercises || []);
+          done.add(exercise.name);
+          session.completedExercises = Array.from(done);
+          session.workoutStarted = true;
+          localStorage.setItem('fitora_workout_session', JSON.stringify(session));
+        }
       } catch {}
 
       setTimeout(() => { onComplete(); onClose(); }, 800);
