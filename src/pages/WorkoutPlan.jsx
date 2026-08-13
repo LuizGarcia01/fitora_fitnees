@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import { supabase } from "@/api/supabaseClient";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +19,6 @@ const allDays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "D
 const todayIndex = new Date().getDay();
 const todayName = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"][todayIndex];
 const today = new Date().toISOString().split('T')[0];
-const SESSION_KEY = 'fitora_workout_session';
 
 export default function WorkoutPlan() {
   const queryClient = useQueryClient();
@@ -35,40 +34,11 @@ export default function WorkoutPlan() {
   const [substitutions, setSubstitutions] = useState({});
   const [workoutStartTime, setWorkoutStartTime] = useState(null);
   const [workoutSummary, setWorkoutSummary] = useState(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const pendingSummaryRef = useRef(null);
+  const activePlanRef = useRef(null);
 
-  // Restore active session from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-      if (saved && saved.date === today) {
-        setSelectedDay(saved.day);
-        setWorkoutStarted(saved.workoutStarted || false);
-        setWorkoutStartTime(saved.workoutStartTime || null);
-        setCompletedExercises(new Set(saved.completedExercises || []));
-        setCheckInData(saved.checkInData || { energy: "normal", sleep: "ok", pain: false });
-        setSubstitutions(saved.substitutions || {});
-      }
-    } catch {}
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Persist active session to localStorage whenever it changes
-  useEffect(() => {
-    if (!workoutStarted) return;
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify({
-        date: today,
-        day: selectedDay,
-        workoutStarted,
-        workoutStartTime,
-        completedExercises: Array.from(completedExercises),
-        checkInData,
-        substitutions,
-      }));
-    } catch {}
-  }, [workoutStarted, workoutStartTime, completedExercises, checkInData, substitutions, selectedDay]);
-
+  // ── Plano ativo ──────────────────────────────────────────────────────────
   const { data: plans = [], isLoading } = useQuery({
     queryKey: ["workout-plans"],
     queryFn: async () => {
@@ -84,45 +54,96 @@ export default function WorkoutPlan() {
       return data || [];
     },
   });
-  // Mapa exato por nome (só guarda exercícios que têm animation_url)
+
+  const activePlan = plans[0];
+  // Keep a ref so callbacks always have the latest plan without stale closures
+  useEffect(() => { activePlanRef.current = activePlan; }, [activePlan]);
+
+  // ── Upsert session to Supabase (fire-and-forget) ─────────────────────────
+  const upsertSession = useCallback((newCompleted, newStarted, newStartTime, newCheckIn) => {
+    const plan = activePlanRef.current;
+    if (!plan) return;
+    supabase
+      .from("workout_sessions")
+      .upsert({
+        plan_id: plan.id,
+        date: today,
+        day: selectedDay,
+        completed_exercises: Array.from(newCompleted),
+        workout_started: newStarted,
+        started_at: newStartTime ? new Date(newStartTime).toISOString() : null,
+        check_in_data: newCheckIn,
+      }, { onConflict: 'user_id,date,day' })
+      .then(); // fire-and-forget
+  }, [selectedDay]);
+
+  // ── Load session from Supabase whenever day or plan changes ─────────────
+  useEffect(() => {
+    if (!activePlan) return;
+    let cancelled = false;
+    setSessionLoading(true);
+
+    supabase
+      .from("workout_sessions")
+      .select("*")
+      .eq("plan_id", activePlan.id)
+      .eq("date", today)
+      .eq("day", selectedDay)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        if (data) {
+          setCompletedExercises(new Set(data.completed_exercises || []));
+          setWorkoutStarted(data.workout_started || false);
+          setWorkoutStartTime(data.started_at ? new Date(data.started_at).getTime() : null);
+          setCheckInData(
+            data.check_in_data?.energy
+              ? data.check_in_data
+              : { energy: "normal", sleep: "ok", pain: false }
+          );
+        } else {
+          setCompletedExercises(new Set());
+          setWorkoutStarted(false);
+          setWorkoutStartTime(null);
+          setCheckInData({ energy: "normal", sleep: "ok", pain: false });
+        }
+        setSessionLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [selectedDay, activePlan?.id]);
+
+  // ── GIF helpers ──────────────────────────────────────────────────────────
   const gifMapExact = exerciseLibrary.reduce((acc, ex) => {
     if (ex.animation_url) acc[ex.name.toLowerCase().trim()] = ex.animation_url;
     return acc;
   }, {});
 
-  // Normaliza removendo espaços e acentos para matching flexível
   const norm = (s) => s.toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, '');
-
   const gifMapNorm = Object.entries(gifMapExact).reduce((acc, [k, v]) => {
     acc[norm(k)] = v;
     return acc;
   }, {});
 
-  // Busca o GIF pelo nome com fallback por similaridade
   const getGif = (name) => {
     if (!name) return null;
     const lower = name.toLowerCase().trim();
     const n = norm(name);
     const keys = Object.keys(gifMapExact);
     const normKeys = Object.keys(gifMapNorm);
-
-    // 1. Exato
     if (gifMapExact[lower]) return gifMapExact[lower];
-    // 2. Exato normalizado (ignora espaços e acentos)
     if (gifMapNorm[n]) return gifMapNorm[n];
-    // 3. Normalizado: busca contém
     const normContains = normKeys.find(k => k.includes(n) || n.includes(k));
     if (normContains) return gifMapNorm[normContains];
-    // 4. Original: busca contém
     const contains = keys.find(k => k.includes(lower) || lower.includes(k));
     if (contains) return gifMapExact[contains];
-    // 5. Primeira palavra
     const firstWord = lower.split(' ')[0];
     const partial = keys.find(k => k.startsWith(firstWord));
     if (partial) return gifMapExact[partial];
     return null;
   };
 
+  // ── Mutations ────────────────────────────────────────────────────────────
   const updatePlanMutation = useMutation({
     mutationFn: async (newWeeklyPlan) => {
       const { data, error } = await supabase
@@ -155,7 +176,7 @@ export default function WorkoutPlan() {
     },
   });
 
-  const activePlan = plans[0];
+  // ── Plan helpers ─────────────────────────────────────────────────────────
   const planDays = activePlan?.weekly_plan?.map((d) => d.day) || [];
   const currentDayPlan = activePlan?.weekly_plan?.find((d) => d.day === selectedDay);
   const isRestDay = !currentDayPlan;
@@ -168,11 +189,23 @@ export default function WorkoutPlan() {
   const effectiveName = (name) => substitutions[name] || name;
   const effectiveExercise = (ex) => ({ ...ex, name: effectiveName(ex.name) });
 
+  // ── Toggle exercise completion — persists to Supabase immediately ─────────
   const toggleExercise = (exerciseName) => {
     setCompletedExercises((prev) => {
       const next = new Set(prev);
       if (next.has(exerciseName)) next.delete(exerciseName);
       else next.add(exerciseName);
+      upsertSession(next, true, workoutStartTime, checkInData);
+      return next;
+    });
+  };
+
+  // ── Mark exercise as completed (called from ExerciseDetail on last set) ───
+  const markExerciseComplete = (exerciseName) => {
+    setCompletedExercises((prev) => {
+      const next = new Set(prev);
+      next.add(exerciseName);
+      upsertSession(next, true, workoutStartTime, checkInData);
       return next;
     });
   };
@@ -181,8 +214,8 @@ export default function WorkoutPlan() {
   const completedCount = completedExercises.size;
   const allCompleted = totalExercises > 0 && completedCount === totalExercises;
 
-  const handleFinishWorkout = () => {
-    localStorage.removeItem(SESSION_KEY);
+  // ── Finish workout — persist to workout_logs, delete active session ───────
+  const handleFinishWorkout = async () => {
     const durationSeconds = workoutStartTime
       ? Math.round((Date.now() - workoutStartTime) / 1000)
       : 0;
@@ -199,7 +232,7 @@ export default function WorkoutPlan() {
     logMutation.mutate({
       plan_id: activePlan.id,
       day: selectedDay,
-      date: new Date().toISOString().split("T")[0],
+      date: today,
       duration_minutes: durationSeconds > 0 ? Math.round(durationSeconds / 60) : null,
       completed_exercises: currentDayPlan.exercises.map((ex) => ({
         exercise_name: effectiveName(ex.name),
@@ -208,12 +241,22 @@ export default function WorkoutPlan() {
       notes: checkInData ? `Check-in: energia=${checkInData.energy}, sono=${checkInData.sleep}` : undefined,
     });
 
+    // Delete the active session — workout is now in workout_logs history
+    supabase
+      .from("workout_sessions")
+      .delete()
+      .eq("plan_id", activePlan.id)
+      .eq("date", today)
+      .eq("day", selectedDay)
+      .then();
+
     setCompletedExercises(new Set());
     setWorkoutStarted(false);
     setWorkoutStartTime(null);
     setCheckInData({ energy: "normal", sleep: "ok", pain: false });
   };
 
+  // ── Loading states ───────────────────────────────────────────────────────
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -282,11 +325,8 @@ export default function WorkoutPlan() {
                 isRest={!planDays.includes(day)}
                 onClick={() => {
                   setSelectedDay(day);
-                  setCompletedExercises(new Set());
-                  setWorkoutStarted(false);
-                  setWorkoutStartTime(null);
                   setSubstitutions({});
-                  localStorage.removeItem(SESSION_KEY);
+                  // State resets happen in the session-load useEffect
                 }}
               />
             ))}
@@ -301,10 +341,14 @@ export default function WorkoutPlan() {
           {showCheckIn && (
             <PreWorkoutCheckin
               onConfirm={(mood) => {
-                setCheckInData({ energy: mood, sleep: "ok", pain: mood === "pain" });
+                const newCheckIn = { energy: mood, sleep: "ok", pain: mood === "pain" };
+                const startTime = Date.now();
+                setCheckInData(newCheckIn);
                 setShowCheckIn(false);
                 setWorkoutStarted(true);
-                setWorkoutStartTime(Date.now());
+                setWorkoutStartTime(startTime);
+                // Save the workout start to Supabase
+                upsertSession(completedExercises, true, startTime, newCheckIn);
               }}
               onClose={() => setShowCheckIn(false)}
             />
@@ -316,12 +360,12 @@ export default function WorkoutPlan() {
               onClose={() => setSelectedExercise(null)}
               onSubstitute={(newName) => applySubstitution(selectedExercise.name, newName)}
               onComplete={() => {
-                if (!workoutStarted) { setWorkoutStarted(true); setWorkoutStartTime(Date.now()); }
-                setCompletedExercises((prev) => {
-                  const next = new Set(prev);
-                  next.add(selectedExercise.name);
-                  return next;
-                });
+                if (!workoutStarted) {
+                  const startTime = Date.now();
+                  setWorkoutStarted(true);
+                  setWorkoutStartTime(startTime);
+                }
+                markExerciseComplete(selectedExercise.name);
                 setSelectedExercise(null);
               }}
             />
@@ -376,30 +420,43 @@ export default function WorkoutPlan() {
             <motion.div key={selectedDay} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }}>
               <p className="text-xs text-muted-foreground mb-4">{totalExercises} exercícios</p>
 
-              <div className="space-y-2.5 mb-5">
-                {currentDayPlan.exercises?.map((exercise, i) => {
-                  const ex = effectiveExercise(exercise);
-                  return (
-                  <div key={exercise.name} onClick={() => setSelectedExercise(ex)} className="cursor-pointer">
-                    <ExerciseCard
-                      exercise={ex}
-                      index={i}
-                      animationUrl={getGif(ex.name)}
-                      completed={completedExercises.has(ex.name)}
-                      onToggle={(e) => {
-                        e.stopPropagation();
-                        if (!workoutStarted) setWorkoutStarted(true);
-                        toggleExercise(ex.name);
-                      }}
-                      onSubstitute={(e) => {
-                        e.stopPropagation();
-                        setShowSubstitution(ex);
-                      }}
-                    />
-                  </div>
-                  );
-                })}
-              </div>
+              {/* Skeleton enquanto a sessão carrega do Supabase */}
+              {sessionLoading ? (
+                <div className="space-y-2.5 mb-5">
+                  {Array.from({ length: totalExercises }).map((_, i) => (
+                    <div key={i} className="h-20 rounded-xl bg-secondary animate-pulse" />
+                  ))}
+                </div>
+              ) : (
+                <div className="space-y-2.5 mb-5">
+                  {currentDayPlan.exercises?.map((exercise, i) => {
+                    const ex = effectiveExercise(exercise);
+                    return (
+                      <div key={exercise.name} onClick={() => setSelectedExercise(ex)} className="cursor-pointer">
+                        <ExerciseCard
+                          exercise={ex}
+                          index={i}
+                          animationUrl={getGif(ex.name)}
+                          completed={completedExercises.has(ex.name)}
+                          onToggle={(e) => {
+                            e.stopPropagation();
+                            if (!workoutStarted) {
+                              const startTime = Date.now();
+                              setWorkoutStarted(true);
+                              setWorkoutStartTime(startTime);
+                            }
+                            toggleExercise(ex.name);
+                          }}
+                          onSubstitute={(e) => {
+                            e.stopPropagation();
+                            setShowSubstitution(ex);
+                          }}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {!workoutStarted ? (
                 <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>

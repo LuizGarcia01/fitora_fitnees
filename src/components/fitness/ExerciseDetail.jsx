@@ -170,20 +170,7 @@ export default function ExerciseDetail({ exercise, animationUrl, onClose, onComp
         localStorage.setItem(PROGRESS_KEY, JSON.stringify(all));
       } catch {}
 
-      // Marca o exercício como concluído na sessão do WorkoutPlan IMEDIATAMENTE —
-      // sem esperar os 800ms, para que o estado seja persistido mesmo que o app feche
-      // durante a animação de conclusão.
-      try {
-        const session = JSON.parse(localStorage.getItem('fitora_workout_session') || 'null');
-        if (session) {
-          const done = new Set(session.completedExercises || []);
-          done.add(exercise.name);
-          session.completedExercises = Array.from(done);
-          session.workoutStarted = true;
-          localStorage.setItem('fitora_workout_session', JSON.stringify(session));
-        }
-      } catch {}
-
+      // onComplete() notifica WorkoutPlan que persiste imediatamente no Supabase
       setTimeout(() => { onComplete(); onClose(); }, 800);
       return;
     }
