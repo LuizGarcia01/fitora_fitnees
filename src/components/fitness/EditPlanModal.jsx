@@ -21,18 +21,22 @@ const MUSCLE_GROUPS = [
   { label: "Cardio",  category: "cardio" },
 ];
 
-const toCategory = (muscleGroup) => {
-  const lower = muscleGroup.toLowerCase();
-  const found = MUSCLE_GROUPS.find((g) => g.label.toLowerCase() === lower);
-  if (found) return found.category;
-  // fallback: strip accents manually
-  return lower
-    .replace(/[áàãâä]/g, "a")
-    .replace(/[éèêë]/g, "e")
-    .replace(/[íìîï]/g, "i")
-    .replace(/[óòõôö]/g, "o")
-    .replace(/[úùûü]/g, "u")
-    .replace(/[ç]/g, "c");
+const stripAccents = (s) =>
+  s.replace(/[áàãâä]/g, "a")
+   .replace(/[éèêë]/g, "e")
+   .replace(/[íìîï]/g, "i")
+   .replace(/[óòõôö]/g, "o")
+   .replace(/[úùûü]/g, "u")
+   .replace(/[ç]/g, "c");
+
+// Retorna array de categorias — suporta grupos compostos como "Peito e Triceps"
+const toCategories = (muscleGroup) => {
+  const parts = muscleGroup.split(/\s+e\s+/i);
+  return parts.map((part) => {
+    const lower = part.trim().toLowerCase();
+    const found = MUSCLE_GROUPS.find((g) => g.label.toLowerCase() === lower);
+    return found ? found.category : stripAccents(lower);
+  });
 };
 
 // ── Tela de seleção de modo ──────────────────────────────────────────────────
@@ -179,8 +183,8 @@ function EditDays({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving }) {
   );
 }
 
-// ── Picker de exercicios (filtrado por categoria) ────────────────────────────
-function ExercisePicker({ category, onSelect, onClose }) {
+// ── Picker de exercicios (filtrado por array de categorias) ─────────────────
+function ExercisePicker({ categories, muscleGroupLabel, onSelect, onClose }) {
   const [search, setSearch] = useState("");
 
   const { data: exercises = [], isLoading } = useQuery({
@@ -192,10 +196,8 @@ function ExercisePicker({ category, onSelect, onClose }) {
     staleTime: 5 * 60 * 1000,
   });
 
-  const categoryLabel = MUSCLE_GROUPS.find((g) => g.category === category)?.label ?? category;
-
   const filtered = exercises.filter((ex) => {
-    const matchesCategory = ex.category === category;
+    const matchesCategory = categories.includes(ex.category);
     const matchesSearch =
       !search ||
       ex.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -217,7 +219,7 @@ function ExercisePicker({ category, onSelect, onClose }) {
         </button>
         <div>
           <p className="text-xs text-primary uppercase tracking-wider font-semibold">Selecionar Exercicio</p>
-          <h2 className="text-base font-heading font-bold text-foreground">{categoryLabel}</h2>
+          <h2 className="text-base font-heading font-bold text-foreground">{muscleGroupLabel}</h2>
         </div>
       </div>
 
@@ -379,7 +381,7 @@ function EditDayView({ block, onSave, onBack }) {
   const [picker, setPicker] = useState(null);
   const [setsRepsFor, setSetsRepsFor] = useState(null);
 
-  const category = toCategory(localBlock.muscle_group);
+  const categories = toCategories(localBlock.muscle_group);
 
   const handleGroupSelect = (group) => {
     setLocalBlock((prev) => ({ ...prev, muscle_group: group.label, exercises: [] }));
@@ -508,7 +510,8 @@ function EditDayView({ block, onSave, onBack }) {
         )}
         {picker && (
           <ExercisePicker
-            category={category}
+            categories={categories}
+            muscleGroupLabel={localBlock.muscle_group}
             onSelect={handleExerciseSelect}
             onClose={() => setPicker(null)}
           />
