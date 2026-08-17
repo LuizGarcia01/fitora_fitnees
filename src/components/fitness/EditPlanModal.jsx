@@ -14,15 +14,26 @@ const MUSCLE_GROUPS = [
   { label: "Costas",  category: "costas" },
   { label: "Pernas",  category: "pernas" },
   { label: "Ombros",  category: "ombros" },
-  { label: "Bíceps",  category: "biceps" },
-  { label: "Tríceps", category: "triceps" },
-  { label: "Abdômen", category: "abdomen" },
-  { label: "Glúteos", category: "gluteos" },
+  { label: "Biceps",  category: "biceps" },
+  { label: "Triceps", category: "triceps" },
+  { label: "Abdomen", category: "abdomen" },
+  { label: "Gluteos", category: "gluteos" },
   { label: "Cardio",  category: "cardio" },
 ];
 
-const toCategory = (muscleGroup) =>
-  muscleGroup.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+const toCategory = (muscleGroup) => {
+  const lower = muscleGroup.toLowerCase();
+  const found = MUSCLE_GROUPS.find((g) => g.label.toLowerCase() === lower);
+  if (found) return found.category;
+  // fallback: strip accents manually
+  return lower
+    .replace(/[áàãâä]/g, "a")
+    .replace(/[éèêë]/g, "e")
+    .replace(/[íìîï]/g, "i")
+    .replace(/[óòõôö]/g, "o")
+    .replace(/[úùûü]/g, "u")
+    .replace(/[ç]/g, "c");
+};
 
 // ── Tela de seleção de modo ──────────────────────────────────────────────────
 function ModeSelect({ onSelect, onClose }) {
@@ -64,8 +75,8 @@ function ModeSelect({ onSelect, onClose }) {
             <Dumbbell className="w-6 h-6 text-primary" />
           </div>
           <div className="flex-1">
-            <p className="text-base font-heading font-bold text-foreground">Exercícios</p>
-            <p className="text-sm text-muted-foreground mt-0.5">Trocar, remover ou adicionar exercícios</p>
+            <p className="text-base font-heading font-bold text-foreground">Exercicios</p>
+            <p className="text-sm text-muted-foreground mt-0.5">Trocar, remover ou adicionar exercicios</p>
           </div>
           <ArrowRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
         </button>
@@ -143,7 +154,7 @@ function EditDays({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving }) {
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-heading font-bold text-foreground">{block.muscle_group}</p>
-                          <p className="text-xs text-muted-foreground mt-0.5">{block.exercises.length} exercícios</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{block.exercises.length} exercicios</p>
                         </div>
                       </div>
                     )}
@@ -161,14 +172,14 @@ function EditDays({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving }) {
           className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-heading font-bold text-base shadow-lg shadow-primary/25">
           {isSaving
             ? <><div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />Salvando...</>
-            : <><Check className="w-5 h-5 mr-2" />Salvar Alterações</>}
+            : <><Check className="w-5 h-5 mr-2" />Salvar Alteracoes</>}
         </Button>
       </div>
     </motion.div>
   );
 }
 
-// ── Picker de exercícios (filtrado por categoria) ────────────────────────────
+// ── Picker de exercicios (filtrado por categoria) ────────────────────────────
 function ExercisePicker({ category, onSelect, onClose }) {
   const [search, setSearch] = useState("");
 
@@ -205,7 +216,7 @@ function ExercisePicker({ category, onSelect, onClose }) {
           <X className="w-4 h-4 text-muted-foreground" />
         </button>
         <div>
-          <p className="text-xs text-primary uppercase tracking-wider font-semibold">Selecionar Exercício</p>
+          <p className="text-xs text-primary uppercase tracking-wider font-semibold">Selecionar Exercicio</p>
           <h2 className="text-base font-heading font-bold text-foreground">{categoryLabel}</h2>
         </div>
       </div>
@@ -215,7 +226,7 @@ function ExercisePicker({ category, onSelect, onClose }) {
           <Search className="absolute left-4 w-4 h-4 text-muted-foreground" />
           <input
             type="text"
-            placeholder="Buscar exercício..."
+            placeholder="Buscar exercicio..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             autoFocus
@@ -232,7 +243,7 @@ function ExercisePicker({ category, onSelect, onClose }) {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="text-center text-muted-foreground text-sm mt-10">Nenhum exercício encontrado</p>
+          <p className="text-center text-muted-foreground text-sm mt-10">Nenhum exercicio encontrado</p>
         ) : (
           <div className="space-y-2 mt-2">
             {filtered.map((ex) => (
@@ -255,7 +266,7 @@ function ExercisePicker({ category, onSelect, onClose }) {
   );
 }
 
-// ── Form de séries/reps ao adicionar novo exercício ──────────────────────────
+// ── Form de series/reps ao adicionar novo exercicio ──────────────────────────
 function SetsRepsForm({ exercise, onConfirm, onClose }) {
   const [sets, setSets] = useState("3");
   const [reps, setReps] = useState("12");
@@ -273,14 +284,14 @@ function SetsRepsForm({ exercise, onConfirm, onClose }) {
           <X className="w-4 h-4 text-muted-foreground" />
         </button>
         <div>
-          <p className="text-xs text-primary uppercase tracking-wider font-semibold">Séries e Repetições</p>
+          <p className="text-xs text-primary uppercase tracking-wider font-semibold">Series e Repeticoes</p>
           <h2 className="text-base font-heading font-bold text-foreground leading-tight">{exercise.name}</h2>
         </div>
       </div>
 
       <div className="flex-1 px-5 pt-8 space-y-6">
         <div>
-          <label className="text-sm font-medium text-muted-foreground mb-2 block">Séries</label>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">Series</label>
           <input
             type="number"
             min="1"
@@ -291,12 +302,12 @@ function SetsRepsForm({ exercise, onConfirm, onClose }) {
           />
         </div>
         <div>
-          <label className="text-sm font-medium text-muted-foreground mb-2 block">Repetições</label>
+          <label className="text-sm font-medium text-muted-foreground mb-2 block">Repeticoes</label>
           <input
             type="text"
             value={reps}
             onChange={(e) => setReps(e.target.value)}
-            placeholder="ex: 12, 10-12, até falha"
+            placeholder="ex: 12, 10-12, ate falha"
             className="w-full bg-card border border-border rounded-2xl px-4 py-4 text-foreground text-center text-2xl font-bold focus:outline-none focus:border-primary transition-colors"
           />
         </div>
@@ -308,7 +319,7 @@ function SetsRepsForm({ exercise, onConfirm, onClose }) {
           className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-heading font-bold text-base shadow-lg shadow-primary/25"
         >
           <Check className="w-5 h-5 mr-2" />
-          Adicionar Exercício
+          Adicionar Exercicio
         </Button>
       </div>
     </motion.div>
@@ -336,7 +347,7 @@ function MuscleGroupPicker({ onSelect, onClose }) {
       </div>
 
       <div className="mx-5 mt-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl px-4 py-3 shrink-0">
-        <p className="text-xs text-yellow-600 dark:text-yellow-400">Trocar a modalidade vai limpar os exercícios do dia. Você poderá adicionar novos em seguida.</p>
+        <p className="text-xs text-yellow-600 dark:text-yellow-400">Trocar a modalidade vai limpar os exercicios do dia. Voce podera adicionar novos em seguida.</p>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pt-4 pb-6 space-y-2.5">
@@ -358,15 +369,15 @@ function MuscleGroupPicker({ onSelect, onClose }) {
   );
 }
 
-// ── Editor de um dia específico ──────────────────────────────────────────────
+// ── Editor de um dia especifico ──────────────────────────────────────────────
 function EditDayView({ block, onSave, onBack }) {
   const [localBlock, setLocalBlock] = useState({
     ...block,
     exercises: [...block.exercises],
   });
   const [showGroupPicker, setShowGroupPicker] = useState(false);
-  const [picker, setPicker] = useState(null); // { mode: 'trocar' | 'adicionar', exIndex?: number }
-  const [setsRepsFor, setSetsRepsFor] = useState(null); // exercise from library
+  const [picker, setPicker] = useState(null);
+  const [setsRepsFor, setSetsRepsFor] = useState(null);
 
   const category = toCategory(localBlock.muscle_group);
 
@@ -433,7 +444,7 @@ function EditDayView({ block, onSave, onBack }) {
           {localBlock.exercises.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <Dumbbell className="w-8 h-8 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">Nenhum exercício. Adicione abaixo.</p>
+              <p className="text-sm">Nenhum exercicio. Adicione abaixo.</p>
             </div>
           ) : (
             <div className="space-y-2.5 mb-4">
@@ -445,7 +456,7 @@ function EditDayView({ block, onSave, onBack }) {
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-foreground truncate">{ex.name}</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
-                      {ex.sets} séries × {ex.reps} reps
+                      {ex.sets} series x {ex.reps} reps
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -473,7 +484,7 @@ function EditDayView({ block, onSave, onBack }) {
             className="w-full flex items-center justify-center gap-2 p-3.5 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 hover:bg-primary/5 transition-all text-muted-foreground hover:text-primary"
           >
             <Plus className="w-4 h-4" />
-            <span className="text-sm font-medium">Adicionar exercício</span>
+            <span className="text-sm font-medium">Adicionar exercicio</span>
           </button>
         </div>
 
@@ -483,7 +494,7 @@ function EditDayView({ block, onSave, onBack }) {
             className="w-full h-14 rounded-2xl bg-primary text-primary-foreground font-heading font-bold text-base shadow-lg shadow-primary/25"
           >
             <Check className="w-5 h-5 mr-2" />
-            Confirmar Alterações
+            Confirmar Alteracoes
           </Button>
         </div>
       </motion.div>
@@ -514,7 +525,7 @@ function EditDayView({ block, onSave, onBack }) {
   );
 }
 
-// ── Editor de exercícios — lista de dias ─────────────────────────────────────
+// ── Editor de exercicios — lista de dias ─────────────────────────────────────
 function EditExercises({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving }) {
   const [editingDayIndex, setEditingDayIndex] = useState(null);
 
@@ -549,7 +560,7 @@ function EditExercises({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving
               <X className="w-4 h-4 text-muted-foreground" />
             </button>
             <div>
-              <p className="text-xs text-primary uppercase tracking-wider font-semibold">Exercícios</p>
+              <p className="text-xs text-primary uppercase tracking-wider font-semibold">Exercicios</p>
               <h2 className="text-base font-heading font-bold text-foreground leading-tight">{plan.name}</h2>
             </div>
           </div>
@@ -566,7 +577,7 @@ function EditExercises({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-heading font-bold text-foreground">{block.muscle_group}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{block.exercises.length} exercícios</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{block.exercises.length} exercicios</p>
                 </div>
                 <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
               </button>
@@ -581,7 +592,7 @@ function EditExercises({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving
             >
               {isSaving
                 ? <><div className="w-5 h-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />Salvando...</>
-                : <><Check className="w-5 h-5 mr-2" />Salvar Alterações</>}
+                : <><Check className="w-5 h-5 mr-2" />Salvar Alteracoes</>}
             </Button>
           </div>
         </motion.div>
