@@ -1,11 +1,23 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { Outlet, Link, useLocation } from "react-router-dom";
 import { Home, Dumbbell, BookOpen, CalendarDays, User, Menu, X, LogOut, ChevronRight, Scale } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useMotionValue } from "framer-motion";
 import { useAuth } from "@/lib/AuthContext";
 import OnboardingTutorial from "@/components/OnboardingTutorial";
 import AICoach from "@/components/fitness/AICoach";
 import { VitaRobot } from "@/components/VitaRobot";
+
+const VITA_CORNER_KEY = 'vita-corner';
+
+const cornerStyle = (corner) => {
+  const base = { position: 'fixed', zIndex: 40 };
+  switch (corner) {
+    case 'top-left':     return { ...base, top: 80,  left: 16 };
+    case 'top-right':    return { ...base, top: 80,  right: 16 };
+    case 'bottom-left':  return { ...base, bottom: 80, left: 16 };
+    default:             return { ...base, bottom: 80, right: 16 };
+  }
+};
 
 
 const bottomNavItems = [
@@ -24,6 +36,32 @@ export default function Layout() {
   const [tutorialDone, setTutorialDone] = useState(
     () => !!localStorage.getItem('fitora_tutorial_done')
   );
+  const [vitaCorner, setVitaCorner] = useState(
+    () => localStorage.getItem(VITA_CORNER_KEY) || 'bottom-right'
+  );
+  const vitaDragX = useMotionValue(0);
+  const vitaDragY = useMotionValue(0);
+  const vitaDragging = useRef(false);
+
+  const handleVitaDragEnd = (_, info) => {
+    const midX = window.innerWidth / 2;
+    const midY = window.innerHeight / 2;
+    const { point } = info;
+    let next;
+    if (point.x < midX && point.y < midY)       next = 'top-left';
+    else if (point.x >= midX && point.y < midY) next = 'top-right';
+    else if (point.x < midX)                    next = 'bottom-left';
+    else                                         next = 'bottom-right';
+    setVitaCorner(next);
+    localStorage.setItem(VITA_CORNER_KEY, next);
+    vitaDragX.set(0);
+    vitaDragY.set(0);
+  };
+
+  const handleVitaClick = () => {
+    if (vitaDragging.current) return;
+    setShowVita(true);
+  };
 
   const handleTutorialFinish = () => {
     localStorage.setItem('fitora_tutorial_done', '1');
@@ -217,12 +255,21 @@ export default function Layout() {
         {!showVita && location.pathname !== "/plano" && (
           <motion.button
             key="vita-fab"
+            drag
+            dragMomentum={false}
+            dragElastic={0.1}
+            style={{ x: vitaDragX, y: vitaDragY, ...cornerStyle(vitaCorner) }}
             initial={{ opacity: 0, scale: 0.5 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.5 }}
             whileTap={{ scale: 0.9 }}
-            onClick={() => setShowVita(true)}
-            className="fixed bottom-20 right-4 z-40 flex items-center justify-center"
+            onDragStart={() => { vitaDragging.current = true; }}
+            onDragEnd={(e, info) => {
+              handleVitaDragEnd(e, info);
+              setTimeout(() => { vitaDragging.current = false; }, 50);
+            }}
+            onClick={handleVitaClick}
+            className="flex items-center justify-center touch-none"
           >
             <motion.div
               animate={{ y: [0, -4, 0] }}
