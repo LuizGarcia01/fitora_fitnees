@@ -5,7 +5,12 @@ import '@/index.css'
 
 if (!window.Capacitor?.isNativePlatform?.()) {
   import('virtual:pwa-register').then(({ registerSW }) => {
-    registerSW({ immediate: false })
+    const updateSW = registerSW({
+      immediate: true,
+      onNeedRefresh() {
+        updateSW(true)
+      },
+    })
   })
 }
 
