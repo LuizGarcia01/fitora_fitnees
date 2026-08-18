@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { supabase } from "@/api/supabaseClient";
@@ -30,12 +30,25 @@ const stripAccents = (s) =>
    .replace(/[ç]/g, "c");
 
 // Retorna array de categorias — suporta grupos compostos como "Peito e Triceps"
+// e nomes customizados como "PernaB", "TreinoA", "Membros Inferiores", etc.
 const toCategories = (muscleGroup) => {
   const parts = muscleGroup.split(/\s+e\s+/i);
   return parts.map((part) => {
-    const lower = part.trim().toLowerCase();
-    const found = MUSCLE_GROUPS.find((g) => g.label.toLowerCase() === lower);
-    return found ? found.category : stripAccents(lower);
+    const lower = stripAccents(part.trim().toLowerCase());
+    // 1. Match exato com label padrão
+    const exact = MUSCLE_GROUPS.find(
+      (g) => stripAccents(g.label.toLowerCase()) === lower
+    );
+    if (exact) return exact.category;
+    // 2. Match parcial: o texto do usuário contém o label ou sua raiz sem 's' final
+    const partial = MUSCLE_GROUPS.find((g) => {
+      const lbl = stripAccents(g.label.toLowerCase());
+      const stem = lbl.replace(/s$/, ""); // "pernas" → "perna", "ombros" → "ombro"
+      return lower.includes(lbl) || lower.includes(stem);
+    });
+    if (partial) return partial.category;
+    // 3. Fallback: devolve o texto normalizado (pode não bater com nenhuma categoria)
+    return lower;
   });
 };
 
@@ -184,8 +197,9 @@ function EditDays({ plan, localPlan, setLocalPlan, onSave, onBack, isSaving }) {
 }
 
 // ── Picker de exercicios (filtrado por array de categorias) ─────────────────
-function ExercisePicker({ categories, muscleGroupLabel, onSelect, onClose }) {
+function ExercisePicker({ categories, muscleGroupLabel, blockExercises = [], onSelect, onClose }) {
   const [search, setSearch] = useState("");
+  const [fallbackCategory, setFallbackCategory] = useState(null);
 
   const { data: exercises = [], isLoading } = useQuery({
     queryKey: ["exercise-library"],
@@ -196,14 +210,83 @@ function ExercisePicker({ categories, muscleGroupLabel, onSelect, onClose }) {
     staleTime: 5 * 60 * 1000,
   });
 
+  const hasMatchingCategory = exercises.some((ex) => categories.includes(ex.category));
+
+  // Quando o nome do dia não é reconhecido, infere categorias a partir dos
+  // exercícios já salvos no bloco (busca por nome na library)
+  const inferredCategories = useMemo(() => {
+    if (hasMatchingCategory || !exercises.length || !blockExercises.length) return [];
+    const cats = new Set();
+    blockExercises.forEach((be) => {
+      const found = exercises.find(
+        (ex) => ex.name.toLowerCase() === be.name.toLowerCase()
+      );
+      if (found?.category) cats.add(found.category);
+    });
+    return [...cats];
+  }, [hasMatchingCategory, blockExercises, exercises]);
+
+  // Categorias efetivas: nome do dia → inferidas dos exercícios → escolha manual
+  const activeCategories = fallbackCategory
+    ? [fallbackCategory]
+    : inferredCategories.length > 0
+    ? inferredCategories
+    : categories;
+
   const filtered = exercises.filter((ex) => {
-    const matchesCategory = categories.includes(ex.category);
+    const matchesCategory = activeCategories.includes(ex.category);
     const matchesSearch =
       !search ||
       ex.name.toLowerCase().includes(search.toLowerCase()) ||
       ex.primary_muscle?.toLowerCase().includes(search.toLowerCase());
     return matchesCategory && matchesSearch;
   });
+
+  // Só pede ao usuário que escolha a modalidade se não conseguiu inferir das categorias
+  // dos exercícios já existentes no bloco (dia vazio com nome não reconhecido)
+  if (!isLoading && !hasMatchingCategory && !inferredCategories.length && !fallbackCategory) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: "100%" }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: "100%" }}
+        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        className="fixed inset-0 z-[60] bg-background flex flex-col"
+      >
+        <div className="flex items-center gap-3 px-5 pt-6 pb-4 border-b border-border/40 shrink-0">
+          <button onClick={onClose} className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
+            <X className="w-4 h-4 text-muted-foreground" />
+          </button>
+          <div>
+            <p className="text-xs text-primary uppercase tracking-wider font-semibold">Selecionar Exercicio</p>
+            <h2 className="text-base font-heading font-bold text-foreground">{muscleGroupLabel}</h2>
+          </div>
+        </div>
+
+        <div className="px-5 pt-5 pb-3 shrink-0">
+          <p className="text-sm text-muted-foreground">
+            Qual modalidade de exercicios voce quer ver?
+          </p>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 pb-6 space-y-2.5">
+          {MUSCLE_GROUPS.map((g) => (
+            <button
+              key={g.category}
+              onClick={() => setFallbackCategory(g.category)}
+              className="w-full flex items-center gap-4 p-4 rounded-2xl border border-border bg-card hover:border-primary/50 hover:bg-primary/5 transition-all text-left group"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center shrink-0 group-hover:bg-primary/20 transition-colors">
+                <Dumbbell className="w-5 h-5 text-primary" />
+              </div>
+              <p className="text-base font-heading font-bold text-foreground">{g.label}</p>
+              <ChevronRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors ml-auto" />
+            </button>
+          ))}
+        </div>
+      </motion.div>
+    );
+  }
 
   return (
     <motion.div
@@ -214,12 +297,19 @@ function ExercisePicker({ categories, muscleGroupLabel, onSelect, onClose }) {
       className="fixed inset-0 z-[60] bg-background flex flex-col"
     >
       <div className="flex items-center gap-3 px-5 pt-6 pb-4 border-b border-border/40 shrink-0">
-        <button onClick={onClose} className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center">
-          <X className="w-4 h-4 text-muted-foreground" />
+        <button
+          onClick={() => fallbackCategory ? setFallbackCategory(null) : onClose()}
+          className="w-10 h-10 rounded-xl bg-card border border-border flex items-center justify-center"
+        >
+          {fallbackCategory ? <ChevronLeft className="w-4 h-4 text-muted-foreground" /> : <X className="w-4 h-4 text-muted-foreground" />}
         </button>
         <div>
           <p className="text-xs text-primary uppercase tracking-wider font-semibold">Selecionar Exercicio</p>
-          <h2 className="text-base font-heading font-bold text-foreground">{muscleGroupLabel}</h2>
+          <h2 className="text-base font-heading font-bold text-foreground">
+            {fallbackCategory
+              ? MUSCLE_GROUPS.find((g) => g.category === fallbackCategory)?.label ?? muscleGroupLabel
+              : muscleGroupLabel}
+          </h2>
         </div>
       </div>
 
@@ -512,6 +602,7 @@ function EditDayView({ block, onSave, onBack }) {
           <ExercisePicker
             categories={categories}
             muscleGroupLabel={localBlock.muscle_group}
+            blockExercises={localBlock.exercises}
             onSelect={handleExerciseSelect}
             onClose={() => setPicker(null)}
           />
